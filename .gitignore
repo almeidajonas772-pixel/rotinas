@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-server/
+coverage/
+playwright-report/
+test-results/
+.data/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+release/
+.vercel/
+
+# Material pessoal de referência (não vai para o repositório)
+sources/*.docx

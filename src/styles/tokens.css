@@ -1,0 +1,152 @@
+/*
+ * Rotinas — tokens de design.
+ * Princípios: instrumento, não painel de vendas. Superfícies tonais com linhas finas,
+ * um acento (cobalto) para ação/conclusão, âmbar reservado para "agora".
+ * Tipografia: Archivo variável — largo (font-stretch alto) para orientação, normal para leitura.
+ */
+
+:root {
+  color-scheme: light;
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --surface-2: #eaeef2;
+  --surface-3: #dfe5ea;
+  --line: #d6dde4;
+  --line-strong: #b4bfca;
+  --line-input: #7d8996;
+  --ink: #0e1318;
+  --ink-2: #44505c;
+  --ink-3: #5f6b78;
+  --accent: #2453d6;
+  --accent-hover: #1c45b8;
+  --accent-ink: #ffffff;
+  --accent-soft: #e5ecff;
+  --accent-line: #b6c7f6;
+  --now: #9a5a00;
+  --now-soft: #fff1da;
+  --danger: #b4232b;
+  --danger-soft: #fde8e9;
+  --warn: #8f5300;
+  --warn-soft: #fff3df;
+  --ok: #1b6e36;
+  --ok-soft: #e3f4e8;
+  --focus: #2453d6;
+  --scrim: rgba(14, 19, 24, 0.42);
+
+  --chart-done: #2453d6;
+  --chart-track: #96aff0;
+  --chart-series-1: #2a78d6;
+  --chart-series-2: #eb6834;
+  --chart-grid: #e3e8ed;
+  --chart-axis: #c3ccd5;
+
+  --font: 'Archivo Variable', 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --wide: 125%;
+  --semi-wide: 112%;
+
+  --fs-display: clamp(2rem, 1.55rem + 1.9vw, 2.75rem);
+  --fs-h2: 1.1875rem;
+  --fs-h3: 1rem;
+  --fs-body: 1rem;
+  --fs-small: 0.875rem;
+  --fs-meta: 0.8125rem;
+
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+
+  --tap: 44px;
+  --content: 760px;
+  --content-wide: 1120px;
+  --nav-width: 248px;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0e1318;
+    --surface: #151c23;
+    --surface-2: #10161c;
+    --surface-3: #1c252e;
+    --line: #26313c;
+    --line-strong: #3b4855;
+    --line-input: #647280;
+    --ink: #e7edf3;
+    --ink-2: #a9b4bf;
+    --ink-3: #8b98a5;
+    --accent: #8aa9ff;
+    --accent-hover: #a5bdff;
+    --accent-ink: #0b1226;
+    --accent-soft: #19254a;
+    --accent-line: #33508f;
+    --now: #ffb547;
+    --now-soft: #2b2110;
+    --danger: #ff8a8a;
+    --danger-soft: #3a1618;
+    --warn: #ffc266;
+    --warn-soft: #2f2410;
+    --ok: #6fd391;
+    --ok-soft: #12291b;
+    --focus: #8aa9ff;
+    --scrim: rgba(0, 0, 0, 0.6);
+    --chart-done: #6a8cf0;
+    --chart-track: #34508c;
+    --chart-series-1: #3987e5;
+    --chart-series-2: #d95926;
+    --chart-grid: #222c36;
+    --chart-axis: #34404c;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e1318;
+  --surface: #151c23;
+  --surface-2: #10161c;
+  --surface-3: #1c252e;
+  --line: #26313c;
+  --line-strong: #3b4855;
+  --line-input: #647280;
+  --ink: #e7edf3;
+  --ink-2: #a9b4bf;
+  --ink-3: #8b98a5;
+  --accent: #8aa9ff;
+  --accent-hover: #a5bdff;
+  --accent-ink: #0b1226;
+  --accent-soft: #19254a;
+  --accent-line: #33508f;
+  --now: #ffb547;
+  --now-soft: #2b2110;
+  --danger: #ff8a8a;
+  --danger-soft: #3a1618;
+  --warn: #ffc266;
+  --warn-soft: #2f2410;
+  --ok: #6fd391;
+  --ok-soft: #12291b;
+  --focus: #8aa9ff;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --chart-done: #6a8cf0;
+  --chart-track: #34508c;
+  --chart-series-1: #3987e5;
+  --chart-series-2: #d95926;
+  --chart-grid: #222c36;
+  --chart-axis: #34404c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}
