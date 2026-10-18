@@ -1,6 +1,7 @@
-import { timingSafeEqual } from 'node:crypto';
 import type { Context, MiddlewareHandler } from 'hono';
+import { SECURITY_HEADERS } from '../shared/security-headers';
 import type { ServerConfig } from './config';
+import { safeEqual } from './crypto';
 
 // ── Logs técnicos (sem conteúdo do usuário) ──────────────────────────────────
 
@@ -24,8 +25,9 @@ export const consoleLogger: Logger = (entry) => {
 // ── Limite de taxa ───────────────────────────────────────────────────────────
 
 /**
- * Limite por chave (janela deslizante de 1 minuto) + teto diário global (dia UTC).
- * Em memória: adequado para a camada privada de uma pessoa rodando num único processo.
+ * Limite por chave (janela deslizante de 1 minuto) + teto diário (dia UTC) em memória.
+ * Na nuvem cada instância tem a sua memória; o teto diário persistente fica no armazenamento
+ * (server/kai/usage.ts) e o teto de gasto definitivo é o limite configurado no Console da Anthropic.
  */
 export class RateLimiter {
   private hits = new Map<string, number[]>();
@@ -63,29 +65,62 @@ export class RateLimiter {
 
 // ── Segurança das rotas /api ─────────────────────────────────────────────────
 
-function safeEqual(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-}
-
 export function jsonError(c: Context, status: 400 | 401 | 403 | 404 | 409 | 410 | 415 | 422 | 429 | 500 | 502 | 503 | 504, code: string, message: string, extra: Record<string, unknown> = {}) {
   return c.json({ ok: false, error: { code, message, ...extra } }, status);
 }
 
+/** Endereço do cliente para limites (primeiro IP do proxy, quando houver). */
+export function clientAddress(c: Context): string {
+  const forwarded = c.req.header('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]!.trim() || 'desconhecido';
+  return c.req.header('x-real-ip') ?? 'local';
+}
+
+/** O pedido vem de uma página da mesma origem? Compara o host do cabeçalho Origin com o host público. */
+function sameHost(origin: string, c: Context): boolean {
+  try {
+    const host = c.req.header('x-forwarded-host') ?? c.req.header('host');
+    return Boolean(host) && new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+/** Tentativas de senha erradas por endereço: depois de 10 em 10 minutos, bloqueia por 10 minutos. */
+export class AuthThrottle {
+  private failures = new Map<string, number[]>();
+  constructor(private now: () => number = Date.now) {}
+  blocked(key: string): boolean {
+    const t = this.now();
+    const recent = (this.failures.get(key) ?? []).filter((x) => t - x < 600_000);
+    this.failures.set(key, recent);
+    return recent.length >= 10;
+  }
+  fail(key: string): void {
+    const list = this.failures.get(key) ?? [];
+    list.push(this.now());
+    this.failures.set(key, list.slice(-20));
+  }
+}
+
 /**
- * - Recusa métodos que alteram estado vindos de outras origens (proteção CSRF para o servidor local).
+ * - Servidor bloqueado (nuvem sem senha): recusa tudo com o motivo, exceto rotas públicas.
+ * - Recusa métodos que alteram estado vindos de outras origens (proteção CSRF).
  * - Exige JSON em POST (impede formulários simples de outros sites).
- * - Se ROTINAS_SERVER_TOKEN estiver definido, exige o cabeçalho x-rotinas-token.
+ * - Com ROTINAS_SERVER_TOKEN definido, exige o cabeçalho x-rotinas-token (comparação em tempo constante).
  */
-export function apiGuard(config: ServerConfig, options: { publicPaths: string[] }): MiddlewareHandler {
+export function apiGuard(config: ServerConfig, options: { publicPaths: string[]; throttle?: AuthThrottle }): MiddlewareHandler {
+  const throttle = options.throttle ?? new AuthThrottle();
   return async (c, next) => {
     const path = new URL(c.req.url).pathname;
+    c.header('cache-control', 'no-store');
+    c.header('x-content-type-options', 'nosniff');
     if (options.publicPaths.includes(path)) return next();
+    if (config.lockReason) return jsonError(c, 503, 'server_locked', config.lockReason);
     const method = c.req.method.toUpperCase();
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
       const origin = c.req.header('origin');
-      if (origin && !config.allowedOrigins.includes(origin)) {
+      if (origin && !config.allowedOrigins.includes(origin) && !sameHost(origin, c)) {
         return jsonError(c, 403, 'forbidden_origin', 'Origem não autorizada para a camada privada.');
       }
       const type = c.req.header('content-type') ?? '';
@@ -94,25 +129,17 @@ export function apiGuard(config: ServerConfig, options: { publicPaths: string[] 
       }
     }
     if (config.accessToken) {
+      const who = clientAddress(c);
+      if (throttle.blocked(who)) return jsonError(c, 429, 'rate_limited', 'Muitas tentativas de senha. Espere 10 minutos.');
       const provided = c.req.header('x-rotinas-token') ?? '';
       if (!safeEqual(provided, config.accessToken)) {
+        throttle.fail(who);
         return jsonError(c, 401, 'unauthorized', 'Senha da camada privada ausente ou incorreta.');
       }
     }
-    c.header('cache-control', 'no-store');
-    c.header('x-content-type-options', 'nosniff');
     return next();
   };
 }
 
 /** Cabeçalhos de segurança para o app estático servido pelo mesmo processo. */
-export const STATIC_SECURITY_HEADERS: Record<string, string> = {
-  'content-security-policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
-  'x-content-type-options': 'nosniff',
-  // Redundante com frame-ancestors, mas cobre navegadores antigos.
-  'x-frame-options': 'DENY',
-  'referrer-policy': 'no-referrer',
-  'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-  'cross-origin-opener-policy': 'same-origin',
-};
+export const STATIC_SECURITY_HEADERS: Record<string, string> = SECURITY_HEADERS;

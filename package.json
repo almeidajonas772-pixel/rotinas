@@ -1,7 +1,7 @@
 {
   "name": "rotinas",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Rotinas — organizador pessoal de hábitos, metas, agenda e reflexões. Dados locais por padrão; assistente Kai opcional via camada privada.",
   "type": "module",
   "engines": {
@@ -14,6 +14,7 @@
     "server": "tsx server/node.ts",
     "build": "tsc -b && vite build && node scripts/build-server.mjs",
     "build:app": "vite build",
+    "build:vercel": "vite build && node scripts/build-vercel.mjs",
     "package:web": "npm run build:app && tsx scripts/package-web.ts",
     "start": "node dist-server/node.js",
     "preview": "vite preview",
@@ -29,6 +30,7 @@
     "@anthropic-ai/sdk": "^0.135.0",
     "@fontsource-variable/archivo": "^5.3.0",
     "@hono/node-server": "^2.1.5",
+    "@vercel/blob": "^2.8.2",
     "dexie": "^4.4.6",
     "dexie-react-hooks": "^4.4.0",
     "hono": "^4.13.13",

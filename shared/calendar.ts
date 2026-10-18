@@ -5,9 +5,13 @@ import { z } from 'zod';
 export const GOOGLE_SCOPES = {
   /** Somente disponibilidade (livre/ocupado). Não lê títulos nem detalhes de eventos. */
   availability: 'https://www.googleapis.com/auth/calendar.freebusy',
+  /** Só leitura dos eventos das agendas que a pessoa possui (título, horário e cor) — opcional. */
+  events: 'https://www.googleapis.com/auth/calendar.events.owned.readonly',
   /** Criar uma agenda secundária "Rotinas" e gerenciar apenas os eventos dela. */
   write: 'https://www.googleapis.com/auth/calendar.app.created',
 } as const;
+
+export type CalendarAccess = 'availability' | 'events' | 'write';
 
 export const APP_CALENDAR_NAME = 'Rotinas';
 
@@ -19,21 +23,43 @@ export interface CalendarStatus {
   connected: boolean;
   scopes: string[];
   canReadAvailability: boolean;
+  canReadEvents: boolean;
   canWrite: boolean;
   calendarName?: string;
   authorizedAt?: string;
 }
 
-export const calendarConnectRequestSchema = z.object({ access: z.enum(['availability', 'write']) });
+export const calendarConnectRequestSchema = z.object({ access: z.enum(['availability', 'events', 'write']) });
 
 export const freeBusyRequestSchema = z
   .object({ timeMin: isoInstant, timeMax: isoInstant, timeZone: z.string().min(1).max(64) })
   .refine((r) => Date.parse(r.timeMax) > Date.parse(r.timeMin), 'Intervalo inválido')
   .refine((r) => Date.parse(r.timeMax) - Date.parse(r.timeMin) <= 62 * 86_400_000, 'Intervalo máximo de 62 dias');
 
+/** Leitura de eventos: no máximo 31 dias por pedido. */
+export const calendarEventsRequestSchema = z
+  .object({ timeMin: isoInstant, timeMax: isoInstant, timeZone: z.string().min(1).max(64) })
+  .refine((r) => Date.parse(r.timeMax) > Date.parse(r.timeMin), 'Intervalo inválido')
+  .refine((r) => Date.parse(r.timeMax) - Date.parse(r.timeMin) <= 31 * 86_400_000, 'Intervalo máximo de 31 dias');
+
 export interface BusyBlock {
   start: string;
   end: string;
+}
+
+/** Evento do Google reduzido ao mínimo necessário (nunca descrição, local ou participantes). */
+export interface GoogleEvent {
+  id: string;
+  title: string;
+  allDay: boolean;
+  /** `AAAA-MM-DD` (dia inteiro) ou instante ISO. */
+  start: string;
+  /** Exclusivo, como na API do Google. */
+  end: string;
+  /** false quando o evento está marcado como "Disponível" no Google. */
+  busy: boolean;
+  colorId?: string;
+  calendar: 'primary' | 'rotinas';
 }
 
 export const calendarBlockSchema = z
@@ -50,14 +76,19 @@ export type CalendarBlock = z.infer<typeof calendarBlockSchema>;
 export const calendarPreviewRequestSchema = z.object({ blocks: z.array(calendarBlockSchema).min(1).max(20) });
 
 export interface CalendarPreview {
-  previewId: string;
+  /** Comprovante assinado pelo servidor, válido por 10 minutos e preso a estes blocos exatos. */
+  previewToken: string;
   expiresAt: string;
   blocks: Array<CalendarBlock & { conflicts: BusyBlock[] }>;
 }
 
-/** A escrita só acontece com o id de uma prévia recente e confirmação explícita. */
+/**
+ * A escrita só acontece com o comprovante de uma prévia recente, os mesmos blocos e confirmação explícita.
+ * Repetir a confirmação não duplica eventos (ids determinísticos no Google).
+ */
 export const calendarCommitRequestSchema = z.object({
-  previewId: z.string().uuid(),
+  previewToken: z.string().min(20).max(4096),
+  blocks: z.array(calendarBlockSchema).min(1).max(20),
   confirm: z.literal(true),
 });
 
@@ -75,6 +106,8 @@ export const calendarErrorCodes = [
   'provider_error',
   'unauthorized',
   'forbidden_origin',
+  'server_locked',
+  'rate_limited',
 ] as const;
 export type CalendarErrorCode = (typeof calendarErrorCodes)[number];
 
@@ -89,3 +122,18 @@ export type CalendarApiResponse<T> =
         partial?: CalendarCommitResult;
       };
     };
+
+/** Paleta padrão de cores de evento do Google (colorId 1–11), para mostrar a mesma cor no app. */
+export const GOOGLE_EVENT_COLORS: Record<string, string> = {
+  '1': '#7986cb',
+  '2': '#33b679',
+  '3': '#8e24aa',
+  '4': '#e67c73',
+  '5': '#f6bf26',
+  '6': '#f4511e',
+  '7': '#039be5',
+  '8': '#616161',
+  '9': '#3f51b5',
+  '10': '#0b8043',
+  '11': '#d50000',
+};

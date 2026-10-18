@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import type { KvStore } from '../storage';
 
 /** Tokens OAuth do Google — existem só no servidor, criptografados em repouso (AES-256-GCM). */
 export interface StoredTokens {
@@ -36,34 +35,31 @@ export function decrypt(payload: string, key: Buffer): string {
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
 }
 
-export class EncryptedFileTokenStore implements TokenStore {
+/** Tokens cifrados guardados no armazenamento da camada privada (arquivo local ou Blob privado na Vercel). */
+export class EncryptedKvTokenStore implements TokenStore {
   constructor(
-    private file: string,
+    private kv: KvStore,
     private key: Buffer,
+    private name = 'google-calendar.enc',
   ) {}
 
   async load(): Promise<StoredTokens | null> {
-    let raw: string;
-    try {
-      raw = await readFile(this.file, 'utf8');
-    } catch {
-      return null;
-    }
+    const raw = await this.kv.get(this.name);
+    if (!raw) return null;
     try {
       return JSON.parse(decrypt(raw, this.key)) as StoredTokens;
     } catch {
-      // Chave trocada ou arquivo corrompido: trata como desconectado (sem expor detalhes).
+      // Chave trocada ou conteúdo corrompido: trata como desconectado (sem expor detalhes).
       return null;
     }
   }
 
   async save(tokens: StoredTokens): Promise<void> {
-    await mkdir(dirname(this.file), { recursive: true });
-    await writeFile(this.file, encrypt(JSON.stringify(tokens), this.key), { encoding: 'utf8', mode: 0o600 });
+    await this.kv.set(this.name, encrypt(JSON.stringify(tokens), this.key));
   }
 
   async clear(): Promise<void> {
-    await rm(this.file, { force: true });
+    await this.kv.delete(this.name);
   }
 }
 

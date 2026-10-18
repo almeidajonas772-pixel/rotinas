@@ -15,6 +15,9 @@ export const KAI_LIMITS = {
   message: 2000,
   historyMessages: 12,
   historyContent: 4000,
+  /** Sessão da noite: conversa mais longa (por voz), em turnos curtos. */
+  nightHistoryMessages: 16,
+  nightItems: 30,
 } as const;
 
 /** Limiar mínimo de dados para análises. Abaixo dele, o Kai não é chamado. */
@@ -30,8 +33,10 @@ const timeStr = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválid
 export const habitRefSchema = z.string().regex(/^h\d{1,3}$/);
 export const goalRefSchema = z.string().regex(/^g\d{1,3}$/);
 export const journalRefSchema = z.string().regex(/^j\d{1,3}$/);
+/** Itens de agenda na sessão da noite: t = hoje, a = amanhã, u = próximos dias. */
+export const agendaRefSchema = z.string().regex(/^(t|a|u)\d{1,3}$/);
 /** Referências que uma resposta pode citar como evidência. */
-export const evidenceRefSchema = z.string().regex(/^((h|g|j)\d{1,3}|checkins|perfil)$/);
+export const evidenceRefSchema = z.string().regex(/^((h|g|j|t|a|u)\d{1,3}|checkins|perfil)$/);
 
 const periodSchema = z.object({ start: dateStr, end: dateStr }).refine((p) => p.start <= p.end, 'Período inválido');
 
@@ -117,7 +122,7 @@ export type KaiContext = z.infer<typeof kaiContextSchema>;
 
 // ── Pedidos ─────────────────────────────────────────────────────────────────
 
-export const kaiTasks = ['chat', 'plan', 'next-step', 'weekly-review', 'goal-breakdown'] as const;
+export const kaiTasks = ['chat', 'plan', 'next-step', 'weekly-review', 'goal-breakdown', 'nightly'] as const;
 export type KaiTask = (typeof kaiTasks)[number];
 
 export const kaiChatRequestSchema = z.object({
@@ -152,6 +157,95 @@ export const kaiGoalBreakdownRequestSchema = z.object({
   childHorizon: z.enum(['month', 'week', 'day']).nullable(),
   maxSteps: z.number().int().min(1).max(8),
 });
+
+
+// ── Sessão da noite ─────────────────────────────────────────────────────────
+
+const habitTimeSchema = z.object({ ref: habitRefSchema, start: timeStr.nullable(), end: timeStr.nullable() });
+
+/**
+ * Dados da noite, montados no aparelho a partir do briefing local. Itens de agenda (títulos e
+ * horários de hoje, amanhã e dos próximos dias, inclusive do Google) só entram com a autorização
+ * específica "Agenda no Kai"; o check-in de hoje, só com a autorização de check-ins.
+ */
+export const nightlyContextSchema = z.object({
+  date: dateStr,
+  weekday: z.string().max(20),
+  now: timeStr,
+  tomorrowDate: dateStr,
+  tomorrowWeekday: z.string().max(20),
+  todayHabits: z
+    .array(z.object({ ref: habitRefSchema, status: z.enum(['done', 'skipped', 'open']), stillPossible: z.boolean() }))
+    .max(KAI_LIMITS.habits),
+  xpToday: z.number().int().min(0).max(100000),
+  tomorrowHabits: z.array(habitTimeSchema).max(KAI_LIMITS.habits),
+  todayTasks: z
+    .array(
+      z.object({
+        ref: z.string().regex(/^t\d{1,3}$/),
+        title: z.string().max(120),
+        kind: z.enum(['task', 'event']),
+        time: timeStr.nullable(),
+        done: z.boolean(),
+      }),
+    )
+    .max(KAI_LIMITS.nightItems)
+    .optional(),
+  tomorrowAgenda: z
+    .array(
+      z.object({
+        ref: z.string().regex(/^a\d{1,3}$/),
+        title: z.string().max(200),
+        kind: z.enum(['task', 'event', 'habit_block', 'google']),
+        allDay: z.boolean(),
+        start: timeStr.nullable(),
+        end: timeStr.nullable(),
+      }),
+    )
+    .max(KAI_LIMITS.nightItems)
+    .optional(),
+  freeWindowsTomorrow: z.array(z.object({ start: timeStr, end: timeStr })).max(12).optional(),
+  upcoming: z
+    .array(
+      z.object({
+        ref: z.string().regex(/^u\d{1,3}$/),
+        date: dateStr,
+        title: z.string().max(200),
+        allDay: z.boolean(),
+        time: timeStr.nullable(),
+        source: z.enum(['rotinas', 'google']),
+        flag: z.enum(['prova', 'prazo']).nullable(),
+      }),
+    )
+    .max(KAI_LIMITS.nightItems)
+    .optional(),
+  goalsPace: z
+    .array(
+      z.object({
+        ref: goalRefSchema,
+        state: z.enum(['ahead', 'on_track', 'behind', 'done', 'no_target']),
+        daysLeft: z.number().int().min(0).max(4000),
+        needed: z.string().max(120).nullable(),
+      }),
+    )
+    .max(KAI_LIMITS.goals),
+  signals: z.array(z.object({ refs: z.array(evidenceRefSchema).max(4), text: z.string().max(240) })).max(8),
+  lastPriority: z.object({ text: z.string().max(200), outcome: z.enum(['done', 'not_done', 'unknown']) }).optional(),
+  priorityTomorrow: z.string().max(200).optional(),
+  checkinToday: z.object({ mood: z.number().int().min(1).max(5).optional(), energy: z.number().int().min(1).max(5).optional() }).optional(),
+});
+export type NightlyContext = z.infer<typeof nightlyContextSchema>;
+
+export const kaiNightlyRequestSchema = z.object({
+  context: kaiContextSchema,
+  night: nightlyContextSchema,
+  /** Sem mensagem: o Kai abre a sessão com o resumo da noite. */
+  message: z.string().trim().min(1).max(KAI_LIMITS.message).optional(),
+  history: z
+    .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(KAI_LIMITS.historyContent) }))
+    .max(KAI_LIMITS.nightHistoryMessages),
+});
+export type KaiNightlyRequest = z.infer<typeof kaiNightlyRequestSchema>;
 
 export type KaiChatRequest = z.infer<typeof kaiChatRequestSchema>;
 export type KaiPlanRequest = z.infer<typeof kaiPlanRequestSchema>;
@@ -249,12 +343,46 @@ export const kaiGoalBreakdownOutputSchema = z.object({
 });
 export type KaiGoalBreakdownOutput = z.infer<typeof kaiGoalBreakdownOutputSchema>;
 
+
+export const kaiNightProposalSchema = z.object({
+  kind: z.enum(['bloco_amanha', 'tarefa_amanha', 'ajustar_habito', 'revisar_agenda', 'reflexao']),
+  title: z.string().min(1).max(120).describe('Ação curta no imperativo'),
+  detail: z.string().max(400).describe('Por que e como, em 1 ou 2 frases'),
+  refs: z.array(evidenceRefSchema).max(6).describe('Registros que motivam a proposta'),
+  start: timeStr.nullable().describe('Para bloco_amanha: início HH:mm dentro de uma janela livre de amanhã; senão null'),
+  end: timeStr.nullable().describe('Para bloco_amanha: fim HH:mm; senão null'),
+  habitRef: habitRefSchema.nullable().describe('Hábito relacionado (h1…), ou null'),
+  goalRef: goalRefSchema.nullable().describe('Meta relacionada (g1…), ou null'),
+});
+export type KaiNightProposal = z.infer<typeof kaiNightProposalSchema>;
+
+export const kaiNightlyOutputSchema = z.object({
+  say: z.string().min(1).max(1200).describe('O que o Kai fala em voz alta: até 4 frases curtas, naturais, sem listas, sem markdown e sem emojis'),
+  observations: z
+    .array(
+      z.object({
+        text: z.string().min(1).max(300).describe('Observação factual curta, com os números exatos do contexto'),
+        refs: z.array(evidenceRefSchema).min(1).max(6),
+        confidence: confidenceSchema,
+      }),
+    )
+    .max(3),
+  proposals: z.array(kaiNightProposalSchema).max(3).describe('Até 3 decisões concretas para amanhã; vazio quando não houver base nos dados'),
+  question: z.string().max(300).nullable().describe('Uma única pergunta curta para a pessoa responder, ou null'),
+  priority: z.string().max(200).nullable().describe('Prioridade nº 1 sugerida (ou confirmada) para amanhã, curta; null se não couber'),
+  supportNotice: z
+    .boolean()
+    .describe('true quando a conversa envolve crise, saúde mental, sintomas, medicamentos ou finanças e apoio profissional deve ser indicado'),
+});
+export type KaiNightlyOutput = z.infer<typeof kaiNightlyOutputSchema>;
+
 export const kaiOutputSchemas = {
   chat: kaiChatOutputSchema,
   plan: kaiPlanOutputSchema,
   'next-step': kaiNextStepOutputSchema,
   'weekly-review': kaiWeeklyReviewOutputSchema,
   'goal-breakdown': kaiGoalBreakdownOutputSchema,
+  nightly: kaiNightlyOutputSchema,
 } as const;
 
 export type KaiOutputFor<T extends KaiTask> = z.infer<(typeof kaiOutputSchemas)[T]>;
@@ -273,6 +401,7 @@ export const kaiErrorCodes = [
   'provider_timeout',
   'invalid_output',
   'refused',
+  'server_locked',
 ] as const;
 export type KaiErrorCode = (typeof kaiErrorCodes)[number];
 
@@ -291,9 +420,12 @@ export interface HealthResponse {
   ok: true;
   service: 'rotinas-private-layer';
   version: string;
+  runtime: 'local' | 'vercel';
   accessTokenRequired: boolean;
+  storage: { ok: boolean; kind: 'file' | 'blob' | 'none'; reason?: string };
   kai: { enabled: boolean; reason?: string; provider?: 'anthropic'; models?: { fast: string; deep: string } };
-  calendar: { enabled: boolean; reason?: string };
+  /** redirectUri é público (é o endereço de retorno que deve ser cadastrado no Google). */
+  calendar: { enabled: boolean; reason?: string; redirectUri?: string };
 }
 
 /** Avaliação compartilhada (cliente e servidor) do mínimo de dados para a revisão semanal. */

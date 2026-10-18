@@ -37,9 +37,8 @@ serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => 
     `Kai: ${config.kai.enabled ? `ativo (${config.kai.modelFast} / ${config.kai.modelDeep})` : `desativado — ${config.kai.reason}`}`,
     `Google Calendar: ${config.calendar.enabled ? 'configurado' : `desativado — ${config.calendar.reason}`}`,
     `Senha da camada privada: ${config.accessToken ? 'exigida' : 'não definida'}`,
+    `Armazenamento: ${config.storage.kind === 'file' ? `arquivos em ${config.storage.fileDir}` : config.storage.kind}`,
   ];
   console.info(lines.join('\n'));
-  if (config.host !== '127.0.0.1' && config.host !== 'localhost' && !config.accessToken) {
-    console.warn('Atenção: o servidor está acessível fora deste computador sem ROTINAS_SERVER_TOKEN. Defina uma senha ou use 127.0.0.1.');
-  }
+  if (config.lockReason) console.warn(`Atenção: ${config.lockReason}`);
 });

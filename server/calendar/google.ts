@@ -1,4 +1,4 @@
-import { APP_CALENDAR_NAME, type BusyBlock } from '../../shared/calendar';
+import { APP_CALENDAR_NAME, type BusyBlock, type GoogleEvent } from '../../shared/calendar';
 
 /**
  * Cliente mínimo da API do Google (OAuth 2.0 para apps web + Calendar v3) via fetch.
@@ -129,20 +129,97 @@ export async function createAppCalendar(fetchFn: FetchLike, accessToken: string,
   return String(body.id);
 }
 
+/**
+ * Cria um evento com id definido pelo app. Se o Google responder 409 (o id já existe), o evento
+ * já foi criado numa tentativa anterior: devolve o mesmo id em vez de duplicar.
+ */
 export async function insertEvent(
   fetchFn: FetchLike,
   accessToken: string,
   calendarId: string,
-  event: { title: string; start: string; end: string; timeZone: string; description?: string },
+  event: { id?: string; title: string; start: string; end: string; timeZone: string; description?: string },
 ): Promise<string> {
-  const body = await api(fetchFn, accessToken, `/calendars/${encodeURIComponent(calendarId)}/events`, {
-    method: 'POST',
-    body: JSON.stringify({
-      summary: event.title,
-      description: event.description,
-      start: { dateTime: event.start, timeZone: event.timeZone },
-      end: { dateTime: event.end, timeZone: event.timeZone },
-    }),
-  });
-  return String(body.id);
+  try {
+    const body = await api(fetchFn, accessToken, `/calendars/${encodeURIComponent(calendarId)}/events`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(event.id ? { id: event.id } : {}),
+        summary: event.title,
+        description: event.description,
+        start: { dateTime: event.start, timeZone: event.timeZone },
+        end: { dateTime: event.end, timeZone: event.timeZone },
+      }),
+    });
+    return String(body.id);
+  } catch (error) {
+    if (event.id && error instanceof GoogleApiError && error.status === 409) return event.id;
+    throw error;
+  }
+}
+
+interface RawEvent {
+  id?: string;
+  summary?: string;
+  status?: string;
+  transparency?: string;
+  colorId?: string;
+  eventType?: string;
+  start?: { date?: string; dateTime?: string };
+  end?: { date?: string; dateTime?: string };
+}
+
+/** Converte um evento da API no formato mínimo do app; descarta cancelados e "local de trabalho". */
+export function normalizeEvent(raw: RawEvent, calendar: GoogleEvent['calendar']): GoogleEvent | null {
+  if (!raw.id || raw.status === 'cancelled' || raw.eventType === 'workingLocation') return null;
+  const allDay = Boolean(raw.start?.date && !raw.start?.dateTime);
+  const start = allDay ? raw.start?.date : raw.start?.dateTime;
+  const end = allDay ? (raw.end?.date ?? raw.start?.date) : (raw.end?.dateTime ?? raw.start?.dateTime);
+  if (!start || !end) return null;
+  const title = (raw.summary ?? '').trim() || '(sem título)';
+  return {
+    id: raw.id,
+    title: title.length > 200 ? `${title.slice(0, 199)}…` : title,
+    allDay,
+    start,
+    end,
+    busy: raw.transparency !== 'transparent',
+    colorId: raw.colorId && /^\d{1,2}$/.test(raw.colorId) ? raw.colorId : undefined,
+    calendar,
+  };
+}
+
+/**
+ * Lê eventos de uma agenda (escopo calendar.events.owned.readonly). Pede só os campos
+ * necessários: título, horário, cor e disponibilidade — nunca descrição, local ou participantes.
+ */
+export async function listEvents(
+  fetchFn: FetchLike,
+  accessToken: string,
+  calendarId: string,
+  range: { timeMin: string; timeMax: string; timeZone: string },
+  calendar: GoogleEvent['calendar'],
+  maxEvents = 250,
+): Promise<GoogleEvent[]> {
+  const out: GoogleEvent[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < 4 && out.length < maxEvents; page++) {
+    const params = new URLSearchParams({
+      timeMin: new Date(range.timeMin).toISOString(),
+      timeMax: new Date(range.timeMax).toISOString(),
+      timeZone: range.timeZone,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: String(Math.min(250, maxEvents)),
+      fields: 'items(id,summary,status,transparency,colorId,eventType,start,end),nextPageToken',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    const body = await api(fetchFn, accessToken, `/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`, { method: 'GET' });
+    for (const raw of (body.items as RawEvent[] | undefined) ?? []) {
+      const event = normalizeEvent(raw, calendar);
+      if (event) out.push(event);
+    }
+    pageToken = typeof body.nextPageToken === 'string' ? body.nextPageToken : undefined;
+    if (!pageToken) break;
+  }
+  return out.slice(0, maxEvents);
 }
