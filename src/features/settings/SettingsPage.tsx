@@ -293,7 +293,7 @@ function NotificationsSection() {
 function ConsentsSection() {
   const { prefs, timezone } = useApp();
   const toast = useToast();
-  const keys: ConsentKey[] = ['kai', 'kaiCheckins', 'kaiJournal', 'calendar', 'notifications'];
+  const keys: ConsentKey[] = ['kai', 'kaiCheckins', 'kaiJournal', 'kaiAgenda', 'calendar', 'voice', 'notifications'];
   return (
     <Section title="Autorizações" id="autorizacoes" description="Cada autorização é independente e pode ser revogada a qualquer momento. Revogar interrompe envios futuros.">
       <ul className="list" role="list">
@@ -305,7 +305,7 @@ function ConsentsSection() {
               <div className="row-main">
                 <span className="row-title">{CONSENT_TEXTS[k].title}</span>
                 <span className="row-meta">
-                  {c.granted ? 'Autorizado' : 'Não autorizado'}
+                  {c.granted ? 'Autorizado' : c.outdated ? 'Texto atualizado: revise para voltar a usar' : 'Não autorizado'}
                   {c.updatedAt ? `, decisão em ${formatInstant(c.updatedAt, timezone)}` : ''}
                 </span>
               </div>
@@ -325,7 +325,7 @@ function ConsentsSection() {
         })}
       </ul>
       <p className="meta" style={{ marginTop: 8 }}>
-        Para conceder, use a tela de cada recurso (Kai, Calendário externo, Notificações). Detalhes em <Link to="/configuracoes/privacidade">Privacidade</Link>.
+        Para conceder, use a tela de cada recurso (Kai, Noite, Calendário externo, Notificações). Detalhes em <Link to="/configuracoes/privacidade">Privacidade</Link>.
       </p>
     </Section>
   );
@@ -339,7 +339,16 @@ function ServerSection() {
   const [result, setResult] = useState<string>();
   const feature = prefs.consents.kai.granted ? 'kai' : prefs.consents.calendar.granted ? 'calendar' : null;
   return (
-    <Section title="Servidor privado" id="servidor" description="A camada privada roda sob seu controle (veja o README) e guarda os segredos de Kai e Google. Este app só fala com ela na mesma origem, em /api.">
+    <Section
+      title="Servidor privado"
+      id="servidor"
+      description={
+        <>
+          A camada privada roda sob seu controle (na sua conta da Vercel ou no seu computador) e guarda os segredos de Kai e Google. Este app só fala com ela na mesma origem, em /api. Passo a passo em{' '}
+          <Link to="/conexoes">Conectar Kai e Google</Link>.
+        </>
+      }
+    >
       <div className="panel stack">
         <TextField
           label="Senha do servidor"
@@ -348,7 +357,7 @@ function ServerSection() {
           autoComplete="off"
           value={token}
           onChange={setToken}
-          hint="Somente se você definiu ROTINAS_SERVER_TOKEN no servidor. Fica guardada só neste aparelho e vai no cabeçalho das chamadas à sua camada privada. Não é a chave da Anthropic nem do Google."
+          hint="A mesma senha definida em ROTINAS_SERVER_TOKEN no servidor (obrigatória na Vercel). Fica guardada só neste aparelho e vai no cabeçalho das chamadas à sua camada privada. Não é a chave da Anthropic nem do Google."
         />
         <div className="btn-row">
           <Button

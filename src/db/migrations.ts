@@ -1,4 +1,4 @@
-import { CONSENT_TEXT_VERSION } from './defaults';
+import { CONSENT_TEXT_VERSION, DEFAULT_NIGHTLY } from './defaults';
 
 /**
  * Migrações de dados entre versões do banco local. As mesmas funções são usadas
@@ -9,9 +9,11 @@ import { CONSENT_TEXT_VERSION } from './defaults';
  *  v1 — esquema inicial (perfil, preferências, hábitos, conclusões, agenda, metas, diário, check-ins, Kai, integrações).
  *  v2 — lembretes locais: tabela `notificationLog`, preferências de notificação e
  *       consentimento de notificações; campo `reminder` nos hábitos.
+ *  v3 — sessão da noite: tabelas `dayPlans` (prioridade do dia) e `nightSessions` (conversas da noite),
+ *       preferências `nightly` e as autorizações `kaiAgenda` e `voice` (começam desligadas).
  */
 
-export const DB_SCHEMA_VERSION = 2;
+export const DB_SCHEMA_VERSION = 3;
 
 type Loose = Record<string, unknown>;
 
@@ -31,6 +33,19 @@ export function upgradeHabitToV2(habit: Loose): Loose {
   return { ...habit, reminder: { enabled: false } };
 }
 
+/** v3: autorizações novas desligadas e preferências da noite com os padrões. Autorizações existentes não mudam. */
+export function upgradePrefsToV3(prefs: Loose): Loose {
+  const out: Loose = { ...prefs };
+  const consents = { ...((out.consents as Loose | undefined) ?? {}) };
+  if (!consents.kaiAgenda) consents.kaiAgenda = { granted: false, version: 1 };
+  if (!consents.voice) consents.voice = { granted: false, version: 1 };
+  out.consents = consents;
+  if (!out.nightly || typeof out.nightly !== 'object') {
+    out.nightly = { ...DEFAULT_NIGHTLY, reminder: { ...DEFAULT_NIGHTLY.reminder } };
+  }
+  return out;
+}
+
 /** Aplica as migrações de dados a um backup exportado em `fromVersion`. */
 export function migrateTables(tables: Record<string, Loose[]>, fromVersion: number): Record<string, Loose[]> {
   let current = { ...tables };
@@ -40,6 +55,14 @@ export function migrateTables(tables: Record<string, Loose[]>, fromVersion: numb
       prefs: (current.prefs ?? []).map(upgradePrefsToV2),
       habits: (current.habits ?? []).map(upgradeHabitToV2),
       notificationLog: current.notificationLog ?? [],
+    };
+  }
+  if (fromVersion < 3) {
+    current = {
+      ...current,
+      prefs: (current.prefs ?? []).map(upgradePrefsToV3),
+      dayPlans: current.dayPlans ?? [],
+      nightSessions: current.nightSessions ?? [],
     };
   }
   return current;

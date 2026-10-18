@@ -89,13 +89,20 @@ export async function clearIntegration(database: RotinasDB = db): Promise<void> 
 
 // ── Notificações ────────────────────────────────────────────────────────────
 
-export async function logNotification(id: string, refId: string, date: CivilDate, database: RotinasDB = db): Promise<void> {
-  await database.notificationLog.put(validate(notificationLogSchema, { id, kind: 'habit_reminder', refId, date, sentAt: nowIso() }));
+export async function logNotification(
+  id: string,
+  refId: string,
+  date: CivilDate,
+  database: RotinasDB = db,
+  kind: 'habit_reminder' | 'night_reminder' = 'habit_reminder',
+): Promise<void> {
+  await database.notificationLog.put(validate(notificationLogSchema, { id, kind, refId, date, sentAt: nowIso() }));
 }
 
-export async function notificationsSentOn(date: CivilDate, database: RotinasDB = db): Promise<Set<string>> {
+/** Ids dos lembretes enviados no dia (por padrão, só os de hábitos — base do limite diário). */
+export async function notificationsSentOn(date: CivilDate, database: RotinasDB = db, kind: 'habit_reminder' | 'night_reminder' | 'all' = 'habit_reminder'): Promise<Set<string>> {
   const rows = await database.notificationLog.where('date').equals(date).toArray();
-  return new Set(rows.map((r) => r.id));
+  return new Set(rows.filter((r) => kind === 'all' || r.kind === kind).map((r) => r.id));
 }
 
 /** Mantém só os registros recentes de lembretes enviados (são técnicos, sem conteúdo). */

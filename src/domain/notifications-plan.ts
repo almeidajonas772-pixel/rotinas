@@ -77,3 +77,36 @@ export function dueReminders(input: {
   }
   return due;
 }
+
+// ── Lembrete da sessão da noite ─────────────────────────────────────────────
+
+export const NIGHT_REMINDER_TITLE = 'Sessão da noite';
+
+export function nightReminderLogId(date: CivilDate): string {
+  return `night_reminder|night|${date}`;
+}
+
+/**
+ * Lembrete diário da sessão da noite (função pura). Exige o canal local, a autorização de
+ * notificações, a permissão do navegador e o lembrete ligado na tela Noite. Como o horário foi
+ * escolhido pela pessoa para este fim, ele não depende da janela silenciosa nem do limite
+ * diário dos lembretes de hábitos. Dispara uma vez por dia, dentro da tolerância após o horário.
+ */
+export function dueNightReminder(input: {
+  now: Date;
+  timeZone: string;
+  prefs: Pick<Preferences, 'notifications' | 'consents' | 'nightly'>;
+  permission: 'granted' | 'denied' | 'default' | 'unsupported';
+  sentToday: ReadonlySet<string>;
+}): DueReminder | null {
+  const { prefs } = input;
+  if (prefs.notifications.channel !== 'local' || !prefs.consents.notifications.granted || input.permission !== 'granted') return null;
+  if (!prefs.nightly.reminder.enabled) return null;
+  const today = todayInZone(input.timeZone, input.now);
+  const nowMin = timeToMinutes(nowTimeInZone(input.timeZone, input.now));
+  const at = timeToMinutes(prefs.nightly.reminder.time);
+  if (nowMin < at || nowMin >= at + REMINDER_GRACE_MINUTES) return null;
+  const id = nightReminderLogId(today);
+  if (input.sentToday.has(id)) return null;
+  return { id, habitId: 'night', date: today, title: NIGHT_REMINDER_TITLE, body: 'Feche o dia e decida a prioridade de amanhã. Toque para abrir a Noite.' };
+}

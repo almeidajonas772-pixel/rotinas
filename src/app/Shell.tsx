@@ -4,7 +4,9 @@ import {
   ChartColumn,
   Compass,
   Ellipsis,
+  Moon,
   NotebookPen,
+  PlugZap,
   Repeat,
   Settings,
   Sun,
@@ -19,6 +21,7 @@ import { usePwa } from '../lib/pwa';
 
 const NAV = [
   { to: '/', label: 'Hoje', icon: Sun, end: true },
+  { to: '/noite', label: 'Noite', icon: Moon },
   { to: '/agenda', label: 'Agenda', icon: CalendarDays },
   { to: '/habitos', label: 'Hábitos', icon: Repeat },
   { to: '/metas', label: 'Metas', icon: Target },
@@ -29,6 +32,7 @@ const NAV = [
 const NAV_SECONDARY = [
   { to: '/kai', label: 'Kai', icon: Compass },
   { to: '/calendario', label: 'Calendário externo', icon: CalendarClock },
+  { to: '/conexoes', label: 'Conectar Kai e Google', icon: PlugZap },
   { to: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
 
@@ -37,10 +41,11 @@ const TABS = [
   { to: '/agenda', label: 'Agenda', icon: CalendarDays },
   { to: '/habitos', label: 'Hábitos', icon: Repeat },
   { to: '/metas', label: 'Metas', icon: Target },
+  { to: '/noite', label: 'Noite', icon: Moon },
   { to: '/mais', label: 'Mais', icon: Ellipsis },
 ];
 
-const MORE_PATHS = ['/mais', '/diario', '/relatorios', '/kai', '/calendario', '/configuracoes'];
+const MORE_PATHS = ['/mais', '/diario', '/relatorios', '/kai', '/calendario', '/conexoes', '/configuracoes'];
 
 export function BrandMark() {
   return (

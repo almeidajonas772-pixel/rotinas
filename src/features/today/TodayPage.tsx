@@ -1,4 +1,4 @@
-import { CalendarPlus, Check, ChevronRight, Ellipsis, NotebookPen, Plus, SkipForward, Undo2 } from 'lucide-react';
+import { CalendarPlus, Check, ChevronRight, Ellipsis, NotebookPen, Plus, SkipForward, Star, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useApp } from '../../app/context';
@@ -6,10 +6,11 @@ import { ActionSheet, Dialog } from '../../components/dialog';
 import { ScalePicker, TextArea } from '../../components/form';
 import { useToast } from '../../components/toast';
 import { Button, ButtonLink, EmptyState, LoadingState, Notice, PageHeader, ProgressBar, Section, Tag } from '../../components/ui';
-import { useAgendaCompletions, useAgendaItems, useCheckin, useCompletions, useHabits, useJournalEntry } from '../../db/hooks';
+import { useAgendaCompletions, useAgendaItems, useCheckin, useCompletions, useDayPlan, useHabits, useJournalEntry } from '../../db/hooks';
 import { describeError } from '../../db/errors';
 import { completeAgendaOccurrence, undoAgendaOccurrence } from '../../db/repo-agenda';
 import { recordHabit, setCompletionNote, undoHabitRecord } from '../../db/repo-habits';
+import { setPriorityOutcome } from '../../db/repo-night';
 import { deleteCheckin, saveCheckin } from '../../db/repo-journal';
 import { expandAgenda, occurrenceKey, type AgendaOccurrence } from '../../domain/agenda';
 import { addDays, eachDay, nowTimeInZone, startOfWeek, timeToMinutes, type CivilDate } from '../../domain/civil';
@@ -29,6 +30,7 @@ export function TodayPage() {
   const agendaCompletions = useAgendaCompletions();
   const checkin = useCheckin(today);
   const journal = useJournalEntry(today);
+  const plan = useDayPlan(today);
   const level = useLevel();
   const now = useNow();
   const toast = useToast();
@@ -130,6 +132,7 @@ export function TodayPage() {
         : 'Nenhum horário marcado hoje';
   const summary = `Mostrador do dia. Agora são ${nowLabel}. ${todays.length > 0 ? `${doneCount} de ${countable} hábitos concluídos.` : 'Nenhum hábito previsto.'} ${next ? `Próximo: ${next.label}.` : ''}`;
 
+  const evening = nowMin >= 18 * 60;
   const weekClosed = data.week.reduce((s, d) => s + d.done + d.missed, 0);
   const weekDone = data.week.reduce((s, d) => s + d.done, 0);
   const greeting = profile.name ? `Olá, ${profile.name}.` : undefined;
@@ -137,6 +140,35 @@ export function TodayPage() {
   return (
     <div className="page">
       <PageHeader title="Hoje" subtitle={greeting ? `${greeting} ${capitalize(formatLongDate(today))}` : capitalize(formatLongDate(today))} />
+
+      {plan?.priority && (
+        <div className={`today-priority${plan.outcome === 'done' ? ' is-done' : ''}`}>
+          <Star size={22} aria-hidden="true" />
+          <div className="grow">
+            <p className="field-label">Prioridade nº 1 de hoje</p>
+            <p className="row-title">{plan.priority}</p>
+          </div>
+          {plan.outcome === 'done' ? (
+            <Button size="sm" variant="ghost" icon={<Undo2 size={16} aria-hidden="true" />} onClick={() => void setPriorityOutcome(today, undefined)}>
+              Cumprida
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              icon={<Check size={16} aria-hidden="true" />}
+              onClick={() =>
+                void setPriorityOutcome(today, 'done')
+                  .then(() => toast.show('Prioridade do dia cumprida.'))
+                  .catch((e) => toast.show(describeError(e), { tone: 'danger' }))
+              }
+            >
+              Cumpri
+            </Button>
+          )}
+        </div>
+      )}
+
+      {evening && <NightInvite />}
 
       <section className="today-hero" aria-label="Resumo do dia">
         <div>
@@ -407,6 +439,21 @@ export function TodayPage() {
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function NightInvite() {
+  return (
+    <Link to="/noite" className="night-invite">
+      <span className="night-invite-orb" aria-hidden="true" />
+      <span className="grow">
+        <strong>Sessão da noite</strong>
+        <span className="meta" style={{ display: 'block' }}>
+          Feche o dia e decida a prioridade nº 1 de amanhã — por voz ou texto.
+        </span>
+      </span>
+      <ChevronRight size={20} aria-hidden="true" />
+    </Link>
+  );
 }
 
 export function CheckButton({ pressed, skipped, label, onClick }: { pressed: boolean; skipped?: boolean; label: string; onClick: () => void }) {

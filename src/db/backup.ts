@@ -7,6 +7,7 @@ import {
   agendaCompletionSchema,
   agendaItemSchema,
   checkinSchema,
+  dayPlanSchema,
   goalProgressEntrySchema,
   goalSchema,
   habitCompletionSchema,
@@ -14,6 +15,7 @@ import {
   journalEntrySchema,
   kaiConversationSchema,
   kaiInsightSchema,
+  nightSessionSchema,
   preferencesSchema,
   profileSchema,
   progressEventSchema,
@@ -47,6 +49,8 @@ const TABLE_SCHEMAS = {
   progressEvents: progressEventSchema,
   kaiInsights: kaiInsightSchema,
   kaiConversations: kaiConversationSchema,
+  dayPlans: dayPlanSchema,
+  nightSessions: nightSessionSchema,
 } as const;
 
 export type BackupTableName = keyof typeof TABLE_SCHEMAS;
@@ -77,6 +81,8 @@ export const TABLE_LABEL: Record<BackupTableName, string> = {
   progressEvents: 'Eventos de XP',
   kaiInsights: 'Análises do Kai',
   kaiConversations: 'Conversas com o Kai',
+  dayPlans: 'Prioridades do dia',
+  nightSessions: 'Sessões da noite',
 };
 
 export async function exportBackup(database: RotinasDB = db): Promise<BackupFile> {
@@ -294,6 +300,25 @@ export async function exportReadable(database: RotinasDB = db): Promise<string> 
     if (e.whatWorked) lines.push(`**O que funcionou?** ${e.whatWorked}`, '');
     if (e.toImprove) lines.push(`**O que poderia melhorar?** ${e.toImprove}`, '');
     if (e.nextStep) lines.push(`**Qual é meu próximo passo?** ${e.nextStep}`, '');
+  }
+
+  lines.push('## Prioridades do dia', '');
+  const plans = [...t.dayPlans].filter((d) => d.priority).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (plans.length === 0) lines.push('Nenhuma prioridade definida.', '');
+  for (const d of plans) {
+    const outcome = d.outcome === 'done' ? 'cumprida' : d.outcome === 'not_done' ? 'não cumprida' : 'sem resposta';
+    lines.push(`- ${formatDate(d.date)}: ${d.priority} (${outcome})`);
+  }
+  if (plans.length > 0) lines.push('');
+
+  lines.push('## Sessões da noite', '');
+  if (t.nightSessions.length === 0) lines.push('Nenhuma sessão.', '');
+  for (const n of [...t.nightSessions].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+    lines.push(`### Noite de ${formatLongDate(n.date, true)}`, '');
+    for (const m of n.messages) {
+      const who = m.role === 'user' ? 'Você' : m.source === 'app' ? 'Rotinas' : 'Kai';
+      lines.push(`**${who}:** ${m.content}${m.question ? ` ${m.question}` : ''}`, '');
+    }
   }
 
   lines.push('## Kai', '');

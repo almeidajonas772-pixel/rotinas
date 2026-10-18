@@ -6,7 +6,7 @@ import { SelectField, Segmented, SwitchRow, TextField } from '../../components/f
 import { useToast } from '../../components/toast';
 import { Button, Notice, Tag } from '../../components/ui';
 import { parseBackup, restoreBackup, TABLE_LABEL, type ParsedBackup, type BackupTableName } from '../../db/backup';
-import { defaultPreferences, HABIT_CATEGORIES, CONSENT_TEXT_VERSION } from '../../db/defaults';
+import { decidedConsent, defaultPreferences, HABIT_CATEGORIES } from '../../db/defaults';
 import { describeError } from '../../db/errors';
 import type { HabitDraft } from '../../db/repo-habits';
 import { completeOnboarding, updatePrefs } from '../../db/repo-profile';
@@ -68,11 +68,15 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
   const draftPrefs = (): Preferences => {
     const now = new Date().toISOString();
     const base = defaultPreferences(now);
-    const c = (granted: boolean) => ({ granted, updatedAt: now, version: CONSENT_TEXT_VERSION });
     return {
       ...base,
       features: { checkins },
-      consents: { ...base.consents, kai: c(kai), kaiCheckins: c(kai && checkins && kaiCheckins), kaiJournal: c(kai && kaiJournal) },
+      consents: {
+        ...base.consents,
+        kai: decidedConsent('kai', kai, now),
+        kaiCheckins: decidedConsent('kaiCheckins', kai && checkins && kaiCheckins, now),
+        kaiJournal: decidedConsent('kaiJournal', kai && kaiJournal, now),
+      },
     };
   };
 

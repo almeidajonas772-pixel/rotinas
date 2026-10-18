@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { exportBackup, parseBackup, restoreBackup, clearAllData } from '../../src/db/backup';
-import { RotinasDB, SCHEMA_V1 } from '../../src/db/db';
+import { RotinasDB, SCHEMA_V1, SCHEMA_V2 } from '../../src/db/db';
 import { UserFacingError } from '../../src/db/errors';
 import {
   completeAgendaOccurrence,
@@ -25,6 +25,7 @@ import {
 } from '../../src/db/repo-habits';
 import { deleteJournalEntry, saveCheckin, saveJournalEntry } from '../../src/db/repo-journal';
 import { rebuildProgressEvents, verifyProgressIntegrity } from '../../src/db/repo-misc';
+import { appendNightMessages, clearPriority, setPriority, setPriorityOutcome, setProposalState } from '../../src/db/repo-night';
 import { completeOnboarding, getPrefs, setConsent } from '../../src/db/repo-profile';
 import { expandAgenda } from '../../src/domain/agenda';
 import { computeGoalProgress } from '../../src/domain/goals';
@@ -285,6 +286,73 @@ describe('consentimentos e onboarding', () => {
   });
 });
 
+describe('noite: prioridade do dia e sessões', () => {
+  it('define, troca, marca e remove a prioridade; trocar o texto limpa o resultado', async () => {
+    await expect(setPriority('2026-10-19', '   ', 'manual', database)).rejects.toBeInstanceOf(UserFacingError);
+    await setPriority('2026-10-19', '  Revisar   Geografia ', 'voice', database);
+    expect(await database.dayPlans.get('2026-10-19')).toMatchObject({ priority: 'Revisar Geografia', prioritySource: 'voice' });
+    await setPriorityOutcome('2026-10-19', 'done', database);
+    expect((await database.dayPlans.get('2026-10-19'))?.outcome).toBe('done');
+    await setPriority('2026-10-19', 'Revisar Geografia', 'manual', database);
+    expect((await database.dayPlans.get('2026-10-19'))?.outcome).toBe('done');
+    await setPriority('2026-10-19', 'Entregar o relatório', 'kai', database);
+    expect((await database.dayPlans.get('2026-10-19'))?.outcome).toBeUndefined();
+    await expect(setPriorityOutcome('2026-10-20', 'done', database)).rejects.toBeInstanceOf(UserFacingError);
+    await clearPriority('2026-10-19', database);
+    expect(await database.dayPlans.get('2026-10-19')).toBeUndefined();
+  });
+
+  it('guarda a conversa da noite (máximo de 120 falas) e o estado de cada proposta', async () => {
+    const now = '2026-10-18T23:00:00.000Z';
+    const many = Array.from({ length: 125 }, (_, i) => ({ id: `m${i}`, role: 'user' as const, content: `fala ${i}`, createdAt: now }));
+    const session = await appendNightMessages('2026-10-18', many, {}, database);
+    expect(session.messages).toHaveLength(120);
+    expect(session.messages[0].id).toBe('m5');
+    await appendNightMessages(
+      '2026-10-18',
+      [
+        {
+          id: 'k1',
+          role: 'assistant',
+          source: 'kai',
+          content: 'Boa noite.',
+          createdAt: now,
+          proposals: [{ kind: 'tarefa_amanha', title: 'Separar o material', detail: '', refs: [], start: null, end: null, status: 'pending' }],
+        },
+      ],
+      { dataUsed: { categories: ['x'], counts: {} } },
+      database,
+    );
+    await setProposalState('2026-10-18', 'k1', 0, { status: 'accepted', createdItemId: 'item-1' }, database);
+    let stored = await database.nightSessions.get('2026-10-18');
+    expect(stored?.messages.at(-1)?.proposals?.[0]).toMatchObject({ status: 'accepted', createdItemId: 'item-1' });
+    expect(stored?.dataUsed?.categories).toEqual(['x']);
+    await setProposalState('2026-10-18', 'k1', 0, { status: 'pending', createdItemId: null }, database);
+    stored = await database.nightSessions.get('2026-10-18');
+    expect(stored?.messages.at(-1)?.proposals?.[0].createdItemId).toBeUndefined();
+  });
+
+  it('a agenda no Kai depende do Kai: sem ele não se autoriza, e revogar o Kai a desliga', async () => {
+    await expect(setConsent('kaiAgenda', true, database)).rejects.toBeInstanceOf(UserFacingError);
+    await setConsent('kai', true, database);
+    await setConsent('kaiAgenda', true, database);
+    await setConsent('voice', true, database);
+    expect((await getPrefs(database)).consents.kaiAgenda.granted).toBe(true);
+    await setConsent('kai', false, database);
+    const prefs = await getPrefs(database);
+    expect(prefs.consents.kaiAgenda.granted).toBe(false);
+    // Voz é independente do Kai.
+    expect(prefs.consents.voice.granted).toBe(true);
+  });
+
+  it('revogar as notificações também desliga o lembrete da noite', async () => {
+    await setConsent('notifications', true, database);
+    await database.prefs.update('prefs', { nightly: { reminder: { enabled: true, time: '21:30' }, speak: true, rate: 1, handsFree: false } });
+    await setConsent('notifications', false, database);
+    expect((await getPrefs(database)).nightly.reminder.enabled).toBe(false);
+  });
+});
+
 describe('persistência, migração e backup', () => {
   it('migra um banco da versão 1 para a 2 preservando os dados', async () => {
     const name = `legacy-${crypto.randomUUID()}`;
@@ -297,12 +365,63 @@ describe('persistência, migração e backup', () => {
 
     const upgraded = new RotinasDB(name);
     await upgraded.open();
-    expect(upgraded.verno).toBe(2);
+    expect(upgraded.verno).toBe(3);
     const prefs = (await upgraded.prefs.get('prefs'))!;
     expect(prefs.notifications.channel).toBe('none');
     expect(prefs.consents.notifications.granted).toBe(false);
+    expect(prefs.consents.kaiAgenda.granted).toBe(false);
+    expect(prefs.consents.voice.granted).toBe(false);
+    expect(prefs.nightly).toMatchObject({ reminder: { enabled: false, time: '21:30' }, speak: true, handsFree: false });
     expect((await upgraded.habits.get('h-old'))!.reminder).toEqual({ enabled: false });
     expect(await upgraded.notificationLog.count()).toBe(0);
+    expect(await upgraded.dayPlans.count()).toBe(0);
+    expect(await upgraded.nightSessions.count()).toBe(0);
+    upgraded.close();
+    await Dexie.delete(name);
+  });
+
+  it('migra da versão 2 para a 3 sem mexer nas autorizações já dadas; textos novos pedem revisão', async () => {
+    const name = `v2-${crypto.randomUUID()}`;
+    const v2 = new Dexie(name);
+    v2.version(1).stores(SCHEMA_V1);
+    v2.version(2).stores(SCHEMA_V2);
+    await v2.open();
+    const at = '2026-10-01T00:00:00.000Z';
+    await v2.table('prefs').put({
+      id: 'prefs',
+      language: 'pt-BR',
+      theme: 'dark',
+      weekStartsOn: 1,
+      notifications: { channel: 'local', quietStart: '22:00', quietEnd: '07:00', allowedDays: [1, 2, 3, 4, 5, 6, 7], maxPerDay: 4 },
+      features: { checkins: true },
+      consents: {
+        kai: { granted: true, updatedAt: at, version: 1 },
+        kaiCheckins: { granted: true, updatedAt: at, version: 1 },
+        kaiJournal: { granted: false, version: 1 },
+        calendar: { granted: true, updatedAt: at, version: 1 },
+        notifications: { granted: true, updatedAt: at, version: 1 },
+      },
+      server: { accessToken: 'senha-do-servidor' },
+      updatedAt: at,
+    });
+    v2.close();
+
+    const upgraded = new RotinasDB(name);
+    await upgraded.open();
+    const raw = (await upgraded.prefs.get('prefs'))!;
+    // O que estava gravado continua igual (nada é revogado silenciosamente no banco).
+    expect(raw.consents.kai).toEqual({ granted: true, updatedAt: at, version: 1 });
+    expect(raw.server.accessToken).toBe('senha-do-servidor');
+    expect(raw.theme).toBe('dark');
+    // O app enxerga o Kai e o calendário desligados até a revisão dos textos novos.
+    const effective = await getPrefs(upgraded);
+    expect(effective.consents.kai).toMatchObject({ granted: false, outdated: true });
+    expect(effective.consents.calendar).toMatchObject({ granted: false, outdated: true });
+    expect(effective.consents.kaiCheckins.granted).toBe(true);
+    expect(effective.consents.notifications.granted).toBe(true);
+    // Rever e conceder de novo grava a versão atual.
+    await setConsent('kai', true, upgraded);
+    expect((await getPrefs(upgraded)).consents.kai).toMatchObject({ granted: true, version: 2 });
     upgraded.close();
     await Dexie.delete(name);
   });
@@ -313,6 +432,8 @@ describe('persistência, migração e backup', () => {
     const h = await createHabit(draft(), { today: '2026-10-10' }, database);
     await recordHabit(h.id, '2026-10-10', 'done', { today: '2026-10-10', timezone: TZ }, database);
     await saveJournalEntry('2026-10-10', { text: 'Dia bom.' }, database);
+    await setPriority('2026-10-11', 'Correr cedo', 'manual', database);
+    await appendNightMessages('2026-10-10', [{ id: 'n1', role: 'user', content: 'Amanhã quero correr cedo.', via: 'voice', createdAt: '2026-10-11T00:00:00.000Z' }], {}, database);
     const file = await exportBackup(database);
     const json = JSON.stringify(file);
     expect(json).not.toContain('segredo-local');
@@ -327,6 +448,8 @@ describe('persistência, migração e backup', () => {
     expect(await target.completions.count()).toBe(1);
     expect(totalXp(await target.progressEvents.toArray())).toBe(10);
     expect((await target.journal.toArray())[0].text).toBe('Dia bom.');
+    expect((await target.dayPlans.get('2026-10-11'))?.priority).toBe('Correr cedo');
+    expect((await target.nightSessions.get('2026-10-10'))?.messages[0].content).toBe('Amanhã quero correr cedo.');
     expect((await verifyProgressIntegrity(target)).ok).toBe(true);
     target.close();
     await Dexie.delete(target.name);
@@ -351,6 +474,8 @@ describe('persistência, migração e backup', () => {
     expect(old.ok).toBe(true);
     if (old.ok) {
       expect(old.backup.tables.habits[0].reminder).toEqual({ enabled: false });
+      expect(old.backup.tables.dayPlans).toEqual([]);
+      expect(old.backup.tables.nightSessions).toEqual([]);
       expect(old.backup.tables.completions).toHaveLength(0);
       expect(old.backup.warnings.join(' ')).toMatch(/sem referência válida/);
     }

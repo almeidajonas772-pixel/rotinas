@@ -1,7 +1,7 @@
-import { CalendarCheck, Link2, RotateCcw, Search, Unlink } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
-import { APP_CALENDAR_NAME, GOOGLE_SCOPES, type CalendarCommitResult, type CalendarStatus } from '../../../shared/calendar';
+import { CalendarCheck, Eye, Link2, RotateCcw, Search, Unlink } from 'lucide-react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router';
+import { APP_CALENDAR_NAME, GOOGLE_EVENT_COLORS, GOOGLE_SCOPES, type CalendarAccess, type CalendarBlock, type CalendarCommitResult } from '../../../shared/calendar';
 import { useApp } from '../../app/context';
 import { ConfirmDialog, Dialog } from '../../components/dialog';
 import { CheckField, SelectField, TextField } from '../../components/form';
@@ -14,45 +14,30 @@ import { clearIntegration, setIntegration } from '../../db/repo-misc';
 import { setConsent } from '../../db/repo-profile';
 import { expandAgenda } from '../../domain/agenda';
 import { addDays, eachDay, minutesToTime, timeToMinutes, type CivilDate } from '../../domain/civil';
-import { formatDuration, formatInstant, formatLongDate } from '../../domain/format';
+import { formatDuration, formatInstant, formatLongDate, formatShortDate, weekdayShort } from '../../domain/format';
+import { googleEventDays } from '../../domain/nightly';
 import { isScheduledOn } from '../../domain/schedule';
 import { conflictsFor, proposeSlots, type BusyInterval, type SlotProposal } from '../../domain/slots';
 import { wallTimeToInstant } from '../../domain/tz';
-import { calendarCommit, calendarConnect, calendarDisconnect, calendarFreeBusy, calendarPreview, calendarStatus } from '../../lib/api';
-import { useOnline } from '../../lib/browser';
+import { calendarCommit, calendarDisconnect, calendarFreeBusy, calendarPreview } from '../../lib/api';
 import { ConsentDetails, ConsentDialog } from '../privacy/ConsentDialog';
+import { clearGoogleEventsCache, useCalendarStatus, useConnectLinks, useGoogleEvents } from './calendar-client';
 
-type StatusState = { state: 'off' } | { state: 'offline' } | { state: 'loading' } | { state: 'error'; message: string } | { state: 'ok'; status: CalendarStatus };
-
-function useCalendarStatus(): [StatusState, () => void] {
-  const { prefs } = useApp();
-  const online = useOnline();
-  const [nonce, setNonce] = useState(0);
-  const granted = prefs.consents.calendar.granted;
-  // Cada verificação tem uma chave; enquanto a resposta da chave atual não chega, o estado é "carregando".
-  const key = `${prefs.consents.calendar.updatedAt}|${nonce}|${prefs.server.accessToken ?? ''}`;
-  const [result, setResult] = useState<{ key: string; value: StatusState } | null>(null);
-  useEffect(() => {
-    if (!granted || !online) return;
-    let alive = true;
-    calendarStatus(prefs)
-      .then((res) => {
-        if (!alive) return;
-        setResult({ key, value: res.ok ? { state: 'ok', status: res.data } : { state: 'error', message: res.error.message } });
-      })
-      .catch((e: unknown) => {
-        if (alive) setResult({ key, value: { state: 'error', message: e instanceof Error ? e.message : 'A camada privada não respondeu.' } });
-      });
-    return () => {
-      alive = false;
-    };
-    // `key` resume as preferências que mudam a verificação; o restante não.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [granted, online, key]);
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
-  if (!granted) return [{ state: 'off' }, refresh];
-  if (!online) return [{ state: 'offline' }, refresh];
-  return [result?.key === key ? result.value : { state: 'loading' }, refresh];
+/** Link que abre a autorização do Google numa aba/janela própria (no iPad instalado, numa folha do Safari). */
+function ConnectLink({ href, variant = 'secondary', icon, children }: { href?: string; variant?: 'primary' | 'secondary'; icon: ReactNode; children: ReactNode }) {
+  if (!href) {
+    return (
+      <Button variant={variant} icon={icon} disabled>
+        {children}
+      </Button>
+    );
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={`btn btn-${variant}`}>
+      {icon}
+      {children}
+    </a>
+  );
 }
 
 interface PlanRow extends SlotProposal {
@@ -77,12 +62,20 @@ export function CalendarPage() {
   const [planning, setPlanning] = useState(false);
   const [planNote, setPlanNote] = useState<string>();
   const [alsoGoogle, setAlsoGoogle] = useState(false);
-  const [googlePreview, setGooglePreview] = useState<{ previewId: string; blocks: Array<{ title: string; start: string; end: string; conflicts: Array<{ start: string; end: string }> }> } | null>(null);
+  const [googlePreview, setGooglePreview] = useState<{ previewToken: string; blocks: CalendarBlock[]; conflicts: Array<Array<{ start: string; end: string }>> } | null>(null);
   const [committing, setCommitting] = useState(false);
 
   const google = status.state === 'ok' ? status.status : undefined;
   const canRead = Boolean(google?.connected && google.canReadAvailability);
   const canWrite = Boolean(google?.connected && google.canWrite);
+  const canReadEvents = Boolean(google?.connected && google.canReadEvents);
+  const levels: CalendarAccess[] = !google?.configured
+    ? []
+    : !google.connected
+      ? ['availability', 'events']
+      : ([!google.canReadEvents && 'events', !google.canWrite && 'write'].filter(Boolean) as CalendarAccess[]);
+  const { links, error: linkError } = useConnectLinks(levels, levels.length > 0);
+  const [events, refreshEvents] = useGoogleEvents(today, addDays(today, 6), canReadEvents);
 
   // Retorno do fluxo OAuth (o servidor redireciona para #/calendario?status=…).
   useEffect(() => {
@@ -110,18 +103,6 @@ export function CalendarPage() {
   const activeHabits = useMemo(() => (habits ?? []).filter((h) => h.status === 'active'), [habits]);
   const habit = activeHabits.find((h) => h.id === habitId);
 
-  async function connect(access: 'availability' | 'write') {
-    try {
-      const res = await calendarConnect(access, prefs);
-      if (!res.ok) {
-        toast.show(res.error.message, { tone: 'danger' });
-        return;
-      }
-      window.location.assign(res.data.url);
-    } catch (e) {
-      toast.show(e instanceof Error ? e.message : 'Falha ao iniciar a conexão.', { tone: 'danger' });
-    }
-  }
 
   async function findSlots() {
     if (!habit || !items) return;
@@ -215,7 +196,8 @@ export function CalendarPage() {
         toast.show(res.error.message, { tone: 'danger' });
         return;
       }
-      setGooglePreview({ previewId: res.data.previewId, blocks: res.data.blocks });
+      // O comprovante vale para estes blocos exatos (o servidor confere na confirmação).
+      setGooglePreview({ previewToken: res.data.previewToken, blocks, conflicts: res.data.blocks.map((b) => b.conflicts) });
     } catch (e) {
       toast.show(e instanceof Error ? e.message : 'Falha ao preparar a prévia.', { tone: 'danger' });
     }
@@ -225,7 +207,7 @@ export function CalendarPage() {
     if (!googlePreview) return;
     setCommitting(true);
     try {
-      const res = await calendarCommit(googlePreview.previewId, prefs);
+      const res = await calendarCommit(googlePreview.previewToken, googlePreview.blocks, prefs);
       if (!res.ok) {
         if (res.error.partial && res.error.partial.created.length > 0) {
           // Parte foi criada no Google: registra só essas e mantém as outras para nova tentativa.
@@ -251,11 +233,17 @@ export function CalendarPage() {
       <Section title="Google Calendar" id="cal-google">
         {status.state === 'off' && (
           <div className="panel stack">
-            <p className="small muted">Desativado: nenhuma chamada é feita. Antes de autorizar, veja o que seria acessado.</p>
+            {prefs.consents.calendar.outdated ? (
+              <Notice tone="info" title="A autorização mudou">
+                Agora ela também cobre a leitura opcional de eventos (título, horário e cor). Revise o texto abaixo para voltar a usar o Google Calendar.
+              </Notice>
+            ) : (
+              <p className="small muted">Desativado: nenhuma chamada é feita. Antes de autorizar, veja o que seria acessado.</p>
+            )}
             <ConsentDetails consent="calendar" />
             <div>
               <Button variant="primary" onClick={() => setAsking(true)}>
-                Autorizar uso do calendário externo
+                {prefs.consents.calendar.outdated ? 'Revisar e autorizar' : 'Autorizar uso do calendário externo'}
               </Button>
             </div>
           </div>
@@ -265,41 +253,62 @@ export function CalendarPage() {
         {status.state === 'error' && (
           <Notice
             tone="warn"
-            title="Integração indisponível"
+            title={status.kind === 'locked' ? 'Servidor bloqueado: falta a senha' : status.kind === 'unauthorized' ? 'Senha do servidor ausente ou incorreta' : status.kind === 'static' ? 'Site publicado sem a camada privada' : 'Integração indisponível'}
             action={
               <>
+                <Link to="/conexoes" className="btn btn-secondary btn-sm">
+                  Conectar Kai e Google
+                </Link>
                 <Button size="sm" icon={<RotateCcw size={16} aria-hidden="true" />} onClick={refresh}>
                   Verificar de novo
                 </Button>
+              </>
+            }
+          >
+            <p>{status.message}</p>
+            <p style={{ marginTop: 6 }}>O assistente “Conectar Kai e Google” mostra o passo exato que falta.</p>
+          </Notice>
+        )}
+        {google && !google.configured && (
+          <Notice
+            tone="warn"
+            title="Google Calendar não configurado no servidor"
+            action={
+              <>
+                <Link to="/conexoes" className="btn btn-secondary btn-sm">
+                  Ver o passo a passo
+                </Link>
                 <Button size="sm" variant="ghost" onClick={() => void setConsent('calendar', false)}>
                   Desativar
                 </Button>
               </>
             }
           >
-            <p>{status.message}</p>
-            <p style={{ marginTop: 6 }}>Para ativar, configure a camada privada com as credenciais OAuth do Google (veja o README, seção “Conectar o Google Calendar”).</p>
-          </Notice>
-        )}
-        {google && !google.configured && (
-          <Notice tone="warn" title="Google Calendar não configurado no servidor" action={<Button size="sm" variant="ghost" onClick={() => void setConsent('calendar', false)}>Desativar</Button>}>
             <p>{google.reason ?? 'Faltam variáveis de ambiente no servidor.'}</p>
-            <p style={{ marginTop: 6 }}>
-              Defina <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code>, <code>GOOGLE_REDIRECT_URI</code> e <code>TOKEN_ENCRYPTION_KEY</code> no <code>.env</code> e reinicie o servidor. Nada é simulado enquanto isso.
-            </p>
+            <p style={{ marginTop: 6 }}>Nada é simulado enquanto isso: o planejador abaixo usa só a agenda do Rotinas.</p>
           </Notice>
         )}
         {google && google.configured && !google.connected && (
           <div className="panel stack">
             <p className="switch-label">Não conectado</p>
-            <p className="small muted">
-              O primeiro passo pede só o escopo de disponibilidade (<code>{GOOGLE_SCOPES.availability.split('/').pop()}</code>): o app vê horários ocupados, sem títulos nem detalhes dos eventos.
-            </p>
-            <div>
-              <Button variant="primary" icon={<Link2 size={18} aria-hidden="true" />} onClick={() => void connect('availability')}>
-                Conectar só disponibilidade
-              </Button>
+            <p className="small">Escolha o nível de acesso. A autorização abre numa aba (ou janela) do Google; ao terminar, volte para cá — a tela atualiza sozinha.</p>
+            <ul className="small">
+              <li>
+                <strong>Disponibilidade</strong> (<code>{GOOGLE_SCOPES.availability.split('/').pop()}</code>): só horários ocupados, sem títulos.
+              </li>
+              <li>
+                <strong>Ver meus eventos</strong> (<code>{GOOGLE_SCOPES.events.split('/').pop()}</code>): também título, horário e cor dos eventos da agenda principal, para a tela Noite e o planejador. Só leitura.
+              </li>
+            </ul>
+            <div className="btn-row">
+              <ConnectLink href={links.events} variant="primary" icon={<Eye size={18} aria-hidden="true" />}>
+                Conectar e ver meus eventos
+              </ConnectLink>
+              <ConnectLink href={links.availability} icon={<Link2 size={18} aria-hidden="true" />}>
+                Só disponibilidade
+              </ConnectLink>
             </div>
+            {linkError && <p className="field-error">{linkError}</p>}
           </div>
         )}
         {google && google.connected && (
@@ -311,21 +320,66 @@ export function CalendarPage() {
             </div>
             <ul className="small">
               <li>Disponibilidade (livre/ocupado): {google.canReadAvailability ? 'autorizada' : 'não autorizada'}</li>
+              <li>Ver eventos da agenda principal (título, horário e cor): {google.canReadEvents ? 'autorizado' : 'não autorizado'}</li>
               <li>
                 Criar blocos numa agenda própria “{APP_CALENDAR_NAME}”: {google.canWrite ? 'autorizado' : 'não autorizado'}
               </li>
             </ul>
             <div className="btn-row">
+              {!google.canReadEvents && (
+                <ConnectLink href={links.events} icon={<Eye size={18} aria-hidden="true" />}>
+                  Ver meus eventos
+                </ConnectLink>
+              )}
               {!google.canWrite && (
-                <Button icon={<CalendarCheck size={18} aria-hidden="true" />} onClick={() => void connect('write')}>
+                <ConnectLink href={links.write} icon={<CalendarCheck size={18} aria-hidden="true" />}>
                   Permitir criar blocos confirmados
-                </Button>
+                </ConnectLink>
               )}
               <Button variant="ghost" icon={<Unlink size={18} aria-hidden="true" />} onClick={() => setConfirmDisconnect(true)}>
                 Desconectar e revogar
               </Button>
             </div>
+            {linkError && <p className="field-error">{linkError}</p>}
             <p className="meta">O escopo de escrita ({GOOGLE_SCOPES.write.split('/').pop()}) só dá acesso à agenda “{APP_CALENDAR_NAME}” criada pelo app — nunca aos seus outros calendários.</p>
+          </div>
+        )}
+        {canReadEvents && (
+          <div className="panel stack" style={{ marginTop: 12 }}>
+            <div className="row-between">
+              <p className="switch-label">Próximos 7 dias no Google</p>
+              <Button size="sm" variant="ghost" icon={<RotateCcw size={16} aria-hidden="true" />} onClick={() => { clearGoogleEventsCache(); refreshEvents(); }}>
+                Atualizar
+              </Button>
+            </div>
+            {events.state === 'loading' && <LoadingState label="Lendo eventos…" lines={2} />}
+            {events.state === 'error' && <Notice tone="warn">{events.message}</Notice>}
+            {events.state === 'ok' &&
+              (events.events.length === 0 ? (
+                <p className="meta">Nenhum evento na agenda principal nos próximos 7 dias.</p>
+              ) : (
+                <ul className="night-list" role="list">
+                  {events.events
+                    .flatMap((e) => googleEventDays(e, today, addDays(today, 6), timezone))
+                    .slice(0, 40)
+                    .map((i) => (
+                      <li key={i.key}>
+                        <span className="night-dot" style={{ background: i.colorId ? GOOGLE_EVENT_COLORS[i.colorId] : 'var(--chart-series-1)' }} aria-hidden="true" />
+                        <span className="night-time">
+                          {weekdayShort(i.date)} {formatShortDate(i.date)}
+                        </span>
+                        <span className="night-time" style={{ minWidth: 72 }}>
+                          {i.allDay || !i.start ? 'Dia todo' : i.start}
+                        </span>
+                        <span className="grow">
+                          {i.title}
+                          {!i.busy && <span className="meta"> · livre</span>}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              ))}
+            <p className="meta">Lidos agora da sua conta; não ficam guardados no servidor nem no backup.</p>
           </div>
         )}
       </Section>
@@ -453,7 +507,7 @@ export function CalendarPage() {
                 <p className="meta">
                   {formatInstant(b.start, timezone)} até {formatInstant(b.end, timezone).split(' às ')[1]}
                 </p>
-                {b.conflicts.length > 0 ? <Tag tone="warn">Conflita com {b.conflicts.length} período(s) ocupado(s)</Tag> : <Tag tone="ok">Sem conflito</Tag>}
+                {(googlePreview.conflicts[i]?.length ?? 0) > 0 ? <Tag tone="warn">Conflita com {googlePreview.conflicts[i].length} período(s) ocupado(s)</Tag> : <Tag tone="ok">Sem conflito</Tag>}
               </div>
             </li>
           ))}
@@ -473,6 +527,7 @@ export function CalendarPage() {
             if (!res.ok) toast.show(res.error.message, { tone: 'danger' });
             else toast.show(res.data.revoked ? 'Acesso revogado no Google e tokens apagados.' : 'Tokens apagados no servidor. Confira também em myaccount.google.com/permissions.');
             await clearIntegration();
+            clearGoogleEventsCache();
           } catch (e) {
             toast.show(e instanceof Error ? e.message : 'Falha ao desconectar.', { tone: 'danger' });
           }

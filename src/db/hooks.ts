@@ -4,6 +4,7 @@ import type {
   AgendaCompletion,
   AgendaItem,
   Checkin,
+  DayPlan,
   Goal,
   GoalProgressEntry,
   Habit,
@@ -12,12 +13,13 @@ import type {
   JournalEntry,
   KaiConversation,
   KaiInsight,
+  NightSession,
   Preferences,
   Profile,
   ProgressEvent,
 } from '../domain/schemas';
 import { db } from './db';
-import { defaultPreferences } from './defaults';
+import { defaultPreferences, effectivePrefs } from './defaults';
 
 /**
  * Consultas reativas ao IndexedDB. `undefined` significa "carregando"; listas vazias e
@@ -28,8 +30,9 @@ export function useProfile(): Profile | null | undefined {
   return useLiveQuery(async () => (await db.profile.get('me')) ?? null, []);
 }
 
+/** Preferências como o app deve enxergá-las (autorizações de textos antigos ficam desligadas até a revisão). */
 export function usePrefs(): Preferences | undefined {
-  return useLiveQuery(async () => (await db.prefs.get('prefs')) ?? defaultPreferences(new Date(0).toISOString()), []);
+  return useLiveQuery(async () => effectivePrefs((await db.prefs.get('prefs')) ?? defaultPreferences(new Date(0).toISOString())), []);
 }
 
 export function useHabits(): Habit[] | undefined {
@@ -98,4 +101,16 @@ export function useKaiConversations(): KaiConversation[] | undefined {
 
 export function useIntegration(): Integration | null | undefined {
   return useLiveQuery(async () => (await db.integrations.get('google_calendar')) ?? null, []);
+}
+
+export function useDayPlan(date: CivilDate): DayPlan | null | undefined {
+  return useLiveQuery(async () => (await db.dayPlans.get(date)) ?? null, [date]);
+}
+
+export function useNightSession(date: CivilDate): NightSession | null | undefined {
+  return useLiveQuery(async () => (await db.nightSessions.get(date)) ?? null, [date]);
+}
+
+export function useNightSessions(): NightSession[] | undefined {
+  return useLiveQuery(() => db.nightSessions.orderBy('date').reverse().toArray(), []);
 }

@@ -5,15 +5,15 @@ import { useCheckins, useCompletions, useGoals, useHabits, useJournal } from '..
 import type { KaiSnapshot } from '../../domain/kai-context';
 import { KaiConsentError } from '../../domain/kai-context';
 import type { Preferences } from '../../domain/schemas';
-import { callKai, FeatureDisabledError, getHealth, OfflineError, ServerUnavailableError, UnauthorizedError } from '../../lib/api';
+import { callKai, FeatureDisabledError, getHealth, OfflineError, ServerLockedError, ServerUnavailableError, UnauthorizedError } from '../../lib/api';
 import { useOnline } from '../../lib/browser';
 import { useGoalContext } from '../shared/data';
 
 export type KaiAvailability =
-  | { state: 'off' }
+  | { state: 'off'; outdated?: boolean }
   | { state: 'offline' }
   | { state: 'checking' }
-  | { state: 'unavailable'; message: string; setup: boolean }
+  | { state: 'unavailable'; message: string; setup: boolean; reason: 'static' | 'locked' | 'not_configured' | 'error' }
   | { state: 'unauthorized'; message: string }
   | { state: 'ready'; models?: { fast: string; deep: string } };
 
@@ -37,13 +37,15 @@ export function useKaiAvailability(): [KaiAvailability, () => void] {
     getHealth('kai', prefs, controller.signal)
       .then((health) => {
         if (health.kai.enabled) settle({ state: 'ready', models: health.kai.models });
-        else settle({ state: 'unavailable', setup: true, message: health.kai.reason ?? 'O Kai não está configurado na camada privada.' });
+        else settle({ state: 'unavailable', setup: true, reason: 'not_configured', message: health.kai.reason ?? 'O Kai não está configurado na camada privada.' });
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         if (error instanceof UnauthorizedError) settle({ state: 'unauthorized', message: error.message });
         else if (error instanceof OfflineError) settle({ state: 'offline' });
-        else settle({ state: 'unavailable', setup: true, message: error instanceof Error ? error.message : 'A camada privada não respondeu.' });
+        else if (error instanceof ServerLockedError) settle({ state: 'unavailable', setup: true, reason: 'locked', message: error.message });
+        else if (error instanceof ServerUnavailableError && error.staticOnly) settle({ state: 'unavailable', setup: true, reason: 'static', message: error.message });
+        else settle({ state: 'unavailable', setup: true, reason: 'error', message: error instanceof Error ? error.message : 'A camada privada não respondeu.' });
       });
     return () => controller.abort();
     // `key` resume as preferências que mudam a verificação; o restante não.
@@ -51,7 +53,7 @@ export function useKaiAvailability(): [KaiAvailability, () => void] {
   }, [granted, online, key]);
 
   const recheck = useCallback(() => setNonce((n) => n + 1), []);
-  if (!granted) return [{ state: 'off' }, recheck];
+  if (!granted) return [{ state: 'off', outdated: prefs.consents.kai.outdated }, recheck];
   if (!online) return [{ state: 'offline' }, recheck];
   return [result?.key === key ? result.value : { state: 'checking' }, recheck];
 }
@@ -81,6 +83,7 @@ export async function runKai<T extends KaiTask>(task: T, payload: unknown, prefs
     if (error instanceof KaiConsentError || error instanceof FeatureDisabledError) return { ok: false, code: 'kai_disabled', message: error.message };
     if (error instanceof OfflineError) return { ok: false, code: 'offline', message: error.message };
     if (error instanceof UnauthorizedError) return { ok: false, code: 'unauthorized', message: error.message };
+    if (error instanceof ServerLockedError) return { ok: false, code: 'server_locked', message: error.message };
     if (error instanceof ServerUnavailableError) return { ok: false, code: 'server_unavailable', message: error.message };
     if (error instanceof DOMException && error.name === 'AbortError') return { ok: false, code: 'aborted', message: 'Pedido cancelado.' };
     return { ok: false, code: 'unknown', message: 'Não foi possível falar com o Kai agora.' };

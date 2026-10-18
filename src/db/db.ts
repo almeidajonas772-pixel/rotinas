@@ -3,6 +3,7 @@ import type {
   AgendaCompletion,
   AgendaItem,
   Checkin,
+  DayPlan,
   Goal,
   GoalProgressEntry,
   Habit,
@@ -11,12 +12,13 @@ import type {
   JournalEntry,
   KaiConversation,
   KaiInsight,
+  NightSession,
   NotificationLog,
   Preferences,
   Profile,
   ProgressEvent,
 } from '../domain/schemas';
-import { DB_SCHEMA_VERSION, upgradeHabitToV2, upgradePrefsToV2 } from './migrations';
+import { DB_SCHEMA_VERSION, upgradeHabitToV2, upgradePrefsToV2, upgradePrefsToV3 } from './migrations';
 
 export const DB_NAME = 'rotinas';
 
@@ -43,7 +45,13 @@ export const SCHEMA_V2 = {
   notificationLog: 'id, date',
 } as const;
 
-export const TABLE_NAMES = Object.keys(SCHEMA_V2) as Array<keyof typeof SCHEMA_V2>;
+export const SCHEMA_V3 = {
+  ...SCHEMA_V2,
+  dayPlans: 'date',
+  nightSessions: 'id, date, updatedAt',
+} as const;
+
+export const TABLE_NAMES = Object.keys(SCHEMA_V3) as Array<keyof typeof SCHEMA_V3>;
 
 export class RotinasDB extends Dexie {
   profile!: EntityTable<Profile, 'id'>;
@@ -61,6 +69,8 @@ export class RotinasDB extends Dexie {
   kaiConversations!: EntityTable<KaiConversation, 'id'>;
   integrations!: EntityTable<Integration, 'id'>;
   notificationLog!: EntityTable<NotificationLog, 'id'>;
+  dayPlans!: EntityTable<DayPlan, 'date'>;
+  nightSessions!: EntityTable<NightSession, 'id'>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -81,10 +91,20 @@ export class RotinasDB extends Dexie {
             Object.assign(h, upgradeHabitToV2(h));
           });
       });
+    this.version(3)
+      .stores(SCHEMA_V3)
+      .upgrade(async (tx) => {
+        await tx
+          .table('prefs')
+          .toCollection()
+          .modify((p: Record<string, unknown>) => {
+            Object.assign(p, upgradePrefsToV3(p));
+          });
+      });
   }
 }
 
-if (DB_SCHEMA_VERSION !== 2) {
+if (DB_SCHEMA_VERSION !== 3) {
   throw new Error('Atualize RotinasDB ao mudar DB_SCHEMA_VERSION.');
 }
 

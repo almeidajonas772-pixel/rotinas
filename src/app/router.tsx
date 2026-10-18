@@ -15,6 +15,8 @@ import { CalendarPage } from '../features/calendar/CalendarPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { PrivacyPage } from '../features/settings/PrivacyPage';
 import { MorePage } from '../features/more/MorePage';
+import { NightPage } from '../features/night/NightPage';
+import { ConnectPage } from '../features/connect/ConnectPage';
 import { NotFoundPage } from '../features/more/NotFoundPage';
 
 /** Rotas do espaço pessoal local (hash router: funciona em qualquer hospedagem estática e offline). */
@@ -24,6 +26,7 @@ export const router = createHashRouter([
     element: <Shell />,
     children: [
       { index: true, element: <TodayPage /> },
+      { path: 'noite', element: <NightPage /> },
       { path: 'habitos', element: <HabitsPage /> },
       { path: 'habitos/novo', element: <HabitFormPage /> },
       { path: 'habitos/:id', element: <HabitDetailPage /> },
@@ -37,6 +40,7 @@ export const router = createHashRouter([
       { path: 'diario', element: <JournalPage /> },
       { path: 'kai', element: <KaiPage /> },
       { path: 'calendario', element: <CalendarPage /> },
+      { path: 'conexoes', element: <ConnectPage /> },
       { path: 'configuracoes', element: <SettingsPage /> },
       { path: 'configuracoes/privacidade', element: <PrivacyPage /> },
       { path: 'mais', element: <MorePage /> },

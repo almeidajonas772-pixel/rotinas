@@ -1,12 +1,14 @@
-import { CalendarClock, ChartColumn, ChevronRight, Compass, NotebookPen, Settings, ShieldCheck } from 'lucide-react';
+import { CalendarClock, ChartColumn, ChevronRight, Compass, Moon, NotebookPen, PlugZap, Settings, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router';
 import { PageHeader } from '../../components/ui';
 
 const LINKS = [
+  { to: '/noite', label: 'Noite', description: 'Feche o dia e decida o amanhã, por voz ou texto', icon: Moon },
   { to: '/diario', label: 'Diário', description: 'Reflexão diária privada', icon: NotebookPen },
   { to: '/relatorios', label: 'Relatórios', description: 'Gráficos dos seus registros', icon: ChartColumn },
   { to: '/kai', label: 'Kai', description: 'Assistente opcional de rotina', icon: Compass },
   { to: '/calendario', label: 'Calendário externo', description: 'Google Calendar e blocos de tempo', icon: CalendarClock },
+  { to: '/conexoes', label: 'Conectar Kai e Google', description: 'Assistente passo a passo da publicação', icon: PlugZap },
   { to: '/configuracoes', label: 'Configurações', description: 'Perfil, notificações, backup e dados', icon: Settings },
   { to: '/configuracoes/privacidade', label: 'Privacidade', description: 'O que fica no aparelho e o que sai dele', icon: ShieldCheck },
 ];

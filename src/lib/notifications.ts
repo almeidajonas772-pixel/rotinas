@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { db } from '../db/db';
 import { logNotification, notificationsSentOn, pruneNotificationLog } from '../db/repo-misc';
 import { addDays, todayInZone } from '../domain/civil';
-import { dueReminders } from '../domain/notifications-plan';
+import { dueNightReminder, dueReminders } from '../domain/notifications-plan';
 import type { Preferences, Profile } from '../domain/schemas';
 
 /**
@@ -41,15 +41,20 @@ export function useNotificationPermission(): [PermissionState, () => Promise<Per
   return [state, request];
 }
 
-export async function showLocalNotification(title: string, body: string, tag: string): Promise<boolean> {
+export async function showLocalNotification(title: string, body: string, tag: string, url = '/#/'): Promise<boolean> {
   if (notificationPermission() !== 'granted') return false;
   try {
     const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined;
     if (registration) {
-      await registration.showNotification(title, { body, tag, icon: '/pwa-192x192.png', badge: '/pwa-64x64.png', data: { url: '/#/' } });
+      await registration.showNotification(title, { body, tag, icon: '/pwa-192x192.png', badge: '/pwa-64x64.png', data: { url } });
       return true;
     }
-    new Notification(title, { body, tag, icon: '/pwa-192x192.png' });
+    const n = new Notification(title, { body, tag, icon: '/pwa-192x192.png' });
+    n.onclick = () => {
+      window.focus();
+      if (url.startsWith('/#')) window.location.hash = url.slice(2);
+      n.close();
+    };
     return true;
   } catch {
     return false;
@@ -72,10 +77,11 @@ export function useReminderScheduler(profile: Profile | null | undefined, prefs:
         if (permission !== 'granted') return;
         const now = new Date();
         const today = todayInZone(profile.timezone, now);
-        const [habits, records, sent] = await Promise.all([
+        const [habits, records, sent, sentNight] = await Promise.all([
           db.habits.where('status').equals('active').toArray(),
           db.completions.where('scheduledDate').equals(today).toArray(),
           notificationsSentOn(today),
+          notificationsSentOn(today, db, 'night_reminder'),
         ]);
         const due = dueReminders({
           now,
@@ -89,6 +95,10 @@ export function useReminderScheduler(profile: Profile | null | undefined, prefs:
         for (const reminder of due) {
           const shown = await showLocalNotification(reminder.title, reminder.body, reminder.id);
           if (shown) await logNotification(reminder.id, reminder.habitId, reminder.date);
+        }
+        const night = dueNightReminder({ now, timeZone: profile.timezone, prefs, permission, sentToday: sentNight });
+        if (night && (await showLocalNotification(night.title, night.body, night.id, '/#/noite'))) {
+          await logNotification(night.id, night.habitId, night.date, db, 'night_reminder');
         }
         await pruneNotificationLog(addDays(today, -14));
       } catch (error) {

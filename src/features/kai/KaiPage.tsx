@@ -77,6 +77,12 @@ export function KaiPage() {
               checked={prefs.consents.kaiJournal.granted}
               onChange={(v) => (v ? setAsking('kaiJournal') : void revoke('kaiJournal'))}
             />
+            <SwitchRow
+              label="Agenda na sessão da noite"
+              description="Títulos e horários de hoje e amanhã (inclusive do Google, se conectado) e provas/prazos da semana. Só na tela Noite."
+              checked={prefs.consents.kaiAgenda.granted}
+              onChange={(v) => (v ? setAsking('kaiAgenda') : void revoke('kaiAgenda'))}
+            />
             <div className="btn-row" style={{ marginTop: 8 }}>
               <Button size="sm" icon={<Eye size={16} aria-hidden="true" />} onClick={() => setPreview(true)}>
                 Ver exatamente o que seria enviado
@@ -128,8 +134,12 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
     case 'off':
       return (
         <div className="panel stack">
-          <p className="switch-label">O Kai está desativado</p>
-          <p className="small muted">Com o Kai desligado, nenhum dado sai deste aparelho e o app funciona por completo. Para ativar, revise o que seria enviado:</p>
+          <p className="switch-label">{availability.outdated ? 'Revise a autorização do Kai' : 'O Kai está desativado'}</p>
+          <p className="small muted">
+            {availability.outdated
+              ? 'O texto da autorização mudou: agora ele inclui a sessão da noite (o que você fala ou escreve ao Kai e a prioridade do dia). Até você revisar, o Kai fica desligado e nada é enviado.'
+              : 'Com o Kai desligado, nenhum dado sai deste aparelho e o app funciona por completo. Para ativar, revise o que seria enviado:'}
+          </p>
           <details className="explain">
             <summary>O que o Kai recebe e para onde vai</summary>
             <ConsentDetails consent="kai" />
@@ -151,7 +161,7 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
       return <LoadingState label="Verificando a camada privada…" lines={1} />;
     case 'unauthorized':
       return (
-        <Notice tone="warn" title="Acesso recusado pelo servidor" action={<Link to="/configuracoes#servidor" className="btn btn-secondary btn-sm">Ajustar senha do servidor</Link>}>
+        <Notice tone="warn" title="Acesso recusado pelo servidor" action={<Link to="/conexoes" className="btn btn-secondary btn-sm">Informar a senha do servidor</Link>}>
           {availability.message}
         </Notice>
       );
@@ -174,7 +184,14 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
         >
           <p>{availability.message}</p>
           <p style={{ marginTop: 6 }}>
-            Para ativar: rode a camada privada deste projeto com <code>ANTHROPIC_API_KEY</code> no arquivo <code>.env</code> (veja o README, seção “Ativar o Kai”). Nenhuma resposta é inventada enquanto isso: o Kai só aparece quando o servidor responde de verdade.
+            {availability.reason === 'static'
+              ? 'O site foi publicado sem a camada privada (por exemplo, arrastando a pasta na Vercel). '
+              : availability.reason === 'locked'
+                ? 'O servidor está publicado, mas falta a senha ROTINAS_SERVER_TOKEN nas variáveis da Vercel. '
+                : availability.reason === 'not_configured'
+                  ? 'Falta a chave ANTHROPIC_API_KEY nas variáveis do servidor. '
+                  : ''}
+            O assistente <Link to="/conexoes">Conectar Kai e Google</Link> mostra o passo exato. Nenhuma resposta é inventada enquanto isso: o Kai só aparece quando o servidor responde de verdade.
           </p>
         </Notice>
       );
@@ -189,7 +206,7 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
             </Button>
           }
         >
-          Respostas geradas por IA (Anthropic{availability.models ? `; modelos ${availability.models.fast} e ${availability.models.deep}` : ''}). Podem conter erros: confira as evidências citadas.
+          Respostas geradas por IA (Anthropic{availability.models ? `; modelos ${availability.models.fast} e ${availability.models.deep}` : ''}). Podem conter erros: confira as evidências citadas. À noite, use a aba <Link to="/noite">Noite</Link> para conversar por voz.
         </Notice>
       );
   }

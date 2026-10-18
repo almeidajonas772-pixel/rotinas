@@ -13,7 +13,8 @@ const LOCAL_DATA = [
   'Metas, vínculos e atualizações manuais',
   'Diário e check-ins',
   'Histórico de conversas e análises do Kai',
-  'Estado da conexão com o Google Calendar (sem tokens)',
+  'Sessões da noite (conversas) e a prioridade nº 1 de cada dia',
+  'Estado da conexão com o Google Calendar (sem tokens). Eventos lidos do Google ficam só na memória enquanto o app está aberto',
 ];
 
 export function PrivacyPage() {
@@ -22,7 +23,9 @@ export function PrivacyPage() {
     { key: 'kai', provider: 'Anthropic (via sua camada privada)', route: '/kai' },
     { key: 'kaiCheckins', provider: 'Anthropic (via sua camada privada)', route: '/kai' },
     { key: 'kaiJournal', provider: 'Anthropic (via sua camada privada)', route: '/kai' },
+    { key: 'kaiAgenda', provider: 'Anthropic (via sua camada privada)', route: '/noite' },
     { key: 'calendar', provider: 'Google Calendar (via sua camada privada)', route: '/calendario' },
+    { key: 'voice', provider: 'serviço de voz do navegador ou do sistema (Google, Microsoft ou Apple, conforme o aparelho)', route: '/noite' },
   ];
   return (
     <div className="page">
@@ -87,6 +90,7 @@ export function PrivacyPage() {
             <li>Não usa analytics, anúncios, pixels de rastreamento, fontes externas ou CDNs.</li>
             <li>Não envia seu nome, observações de conclusões nem entradas privadas do Diário ao Kai.</li>
             <li>Não guarda chaves de API ou tokens OAuth no navegador: eles ficam só na camada privada.</li>
+            <li>Não grava áudio: o microfone só fica ligado enquanto a tela Noite mostra “Ouvindo”, e só o texto reconhecido é usado.</li>
             <li>A camada privada registra apenas dados técnicos (rota, status, duração, modelo, contagem de tokens), sem conteúdo.</li>
           </ul>
         </div>

@@ -62,10 +62,15 @@ export const consentSchema = z.object({
   updatedAt: isoInstantSchema.optional(),
   /** Versão do texto de explicação aceito. */
   version: z.number().int().min(1),
+  /**
+   * Só em memória (nunca gravado): a pessoa autorizou um texto anterior desta autorização.
+   * Enquanto não revisar o texto novo, o recurso fica desligado.
+   */
+  outdated: z.boolean().optional(),
 });
 export type Consent = z.infer<typeof consentSchema>;
 
-export const consentKeys = ['kai', 'kaiCheckins', 'kaiJournal', 'calendar', 'notifications'] as const;
+export const consentKeys = ['kai', 'kaiCheckins', 'kaiJournal', 'kaiAgenda', 'calendar', 'voice', 'notifications'] as const;
 export type ConsentKey = (typeof consentKeys)[number];
 
 export const preferencesSchema = z.object({
@@ -88,12 +93,27 @@ export const preferencesSchema = z.object({
     kai: consentSchema,
     kaiCheckins: consentSchema,
     kaiJournal: consentSchema,
+    /** Títulos e horários da agenda (inclusive do Google) na sessão da noite. */
+    kaiAgenda: consentSchema,
     calendar: consentSchema,
+    /** Reconhecimento de fala do navegador e vozes online. */
+    voice: consentSchema,
     notifications: consentSchema,
   }),
   server: z.object({
-    /** Senha opcional da camada privada (ROTINAS_SERVER_TOKEN). Não é chave de provedor. */
+    /** Senha da camada privada (ROTINAS_SERVER_TOKEN). Não é chave de provedor. */
     accessToken: optionalText(200),
+  }),
+  /** Sessão da noite: lembrete local e voz. */
+  nightly: z.object({
+    reminder: z.object({ enabled: z.boolean(), time: localTimeSchema }),
+    /** Ler em voz alta o resumo e as respostas do Kai. */
+    speak: z.boolean(),
+    /** Voz escolhida (identificador do navegador). Ausente = automática, preferindo vozes locais em português. */
+    voiceURI: optionalText(300),
+    rate: z.number().min(0.7).max(1.4),
+    /** Depois que o Kai fala, o microfone volta a ouvir sozinho (onde o navegador permite). */
+    handsFree: z.boolean(),
   }),
   updatedAt: isoInstantSchema,
 });
@@ -481,12 +501,82 @@ export type Integration = z.infer<typeof integrationSchema>;
 export const notificationLogSchema = z.object({
   /** `${kind}|${refId}|${date}` — evita lembrete duplicado. */
   id: idSchema,
-  kind: z.literal('habit_reminder'),
+  kind: z.enum(['habit_reminder', 'night_reminder']),
   refId: idSchema,
   date: civilDateSchema,
   sentAt: isoInstantSchema,
 });
 export type NotificationLog = z.infer<typeof notificationLogSchema>;
+
+// ── Noite: prioridade do dia e sessões com o Kai ───────────────────────────
+
+/** Plano de um dia: a prioridade nº 1 (definida na noite anterior) e o resultado. */
+export const dayPlanSchema = z.object({
+  date: civilDateSchema,
+  priority: z.string().trim().min(1).max(200).optional(),
+  prioritySource: z.enum(['manual', 'voice', 'kai']).optional(),
+  prioritySetAt: isoInstantSchema.optional(),
+  outcome: z.enum(['done', 'not_done']).optional(),
+  outcomeAt: isoInstantSchema.optional(),
+  createdAt: isoInstantSchema,
+  updatedAt: isoInstantSchema,
+});
+export type DayPlan = z.infer<typeof dayPlanSchema>;
+
+export const nightProposalKindSchema = z.enum(['bloco_amanha', 'tarefa_amanha', 'ajustar_habito', 'revisar_agenda', 'reflexao']);
+export type NightProposalKind = z.infer<typeof nightProposalKindSchema>;
+
+export const nightProposalSchema = z.object({
+  kind: nightProposalKindSchema,
+  title: z.string().max(120),
+  detail: z.string().max(400),
+  refs: z.array(z.string().max(20)).max(6),
+  start: localTimeSchema.nullable(),
+  end: localTimeSchema.nullable(),
+  /** Ids locais resolvidos a partir das referências no momento da resposta. */
+  habitId: idSchema.optional(),
+  goalId: idSchema.optional(),
+  status: z.enum(['pending', 'accepted', 'dismissed']),
+  /** Item criado na agenda ao aceitar (permite desfazer). */
+  createdItemId: idSchema.optional(),
+});
+export type NightProposal = z.infer<typeof nightProposalSchema>;
+
+export const nightMessageSchema = z.object({
+  id: idSchema,
+  role: z.enum(['user', 'assistant']),
+  /** Texto exibido; no Kai, é o que foi falado. */
+  content: z.string().max(4000),
+  /** Quem produziu a fala do assistente: o Kai (IA) ou o resumo calculado pelo app. */
+  source: z.enum(['kai', 'app']).optional(),
+  /** Como a pessoa respondeu. */
+  via: z.enum(['voice', 'text']).optional(),
+  question: z.string().max(300).optional(),
+  priority: z.string().max(200).optional(),
+  observations: z
+    .array(z.object({ text: z.string().max(300), refs: z.array(z.string().max(20)).max(6), confidence: z.enum(['baixa', 'media', 'alta']) }))
+    .max(3)
+    .optional(),
+  proposals: z.array(nightProposalSchema).max(3).optional(),
+  /** Evidências descritas pelo app (não pelo modelo) para as referências citadas. */
+  evidence: z.record(z.string(), z.object({ label: z.string().max(200), detail: z.string().max(400) })).optional(),
+  supportNotice: z.boolean().optional(),
+  model: z.string().max(80).optional(),
+  createdAt: isoInstantSchema,
+});
+export type NightMessage = z.infer<typeof nightMessageSchema>;
+
+export const nightSessionSchema = z.object({
+  /** Uma sessão por noite: o id é a data. */
+  id: civilDateSchema,
+  date: civilDateSchema,
+  messages: z.array(nightMessageSchema).max(120),
+  /** O que foi enviado ao Kai na última chamada (categorias e contagens). */
+  dataUsed: kaiDataManifestSchema.optional(),
+  createdAt: isoInstantSchema,
+  updatedAt: isoInstantSchema,
+});
+export type NightSession = z.infer<typeof nightSessionSchema>;
 
 /** Converte erros do Zod em um mapa campo → mensagem para formulários. */
 export function fieldErrors(error: z.ZodError): Record<string, string> {
