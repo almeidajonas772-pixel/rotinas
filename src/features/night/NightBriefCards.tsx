@@ -5,7 +5,7 @@ import { Button, Tag } from '../../components/ui';
 import { diffDays } from '../../domain/civil';
 import { formatShortDate, plural } from '../../domain/format';
 import { HORIZON_LABEL } from '../../domain/goals';
-import type { NightAgendaItem, NightBrief, NightGoal } from '../../domain/nightly';
+import type { NightAgendaItem, NightBrief, NightGoal, NightTomorrowHabit } from '../../domain/nightly';
 
 const PACE_LABEL: Record<NightGoal['state'], { label: string; tone?: 'ok' | 'warn' | 'accent' }> = {
   ahead: { label: 'Acima do ritmo', tone: 'ok' },
@@ -44,7 +44,11 @@ export function NightBriefCards({
   const { today } = brief;
   const possible = today.habits.filter((h) => h.stillPossible);
   const openTasks = today.tasks.filter((t) => !t.done);
-  const timedHabits = brief.tomorrowHabits.filter((h) => !h.fromBlock);
+  // Amanhã em ordem cronológica: dia inteiro primeiro, depois por horário (agenda, Google e hábitos juntos).
+  const tomorrowRows: Array<{ type: 'item'; item: NightAgendaItem; sort: string } | { type: 'habit'; habit: NightTomorrowHabit; sort: string }> = [
+    ...brief.tomorrowItems.map((item) => ({ type: 'item' as const, item, sort: item.allDay ? '00:00:0' : `${item.start ?? '99:99'}:1` })),
+    ...brief.tomorrowHabits.filter((h) => !h.fromBlock).map((habit) => ({ type: 'habit' as const, habit, sort: `${habit.start ?? '99:99'}:2` })),
+  ].sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
   return (
     <div className="night-grid">
       <article className="night-card" aria-labelledby="night-today">
@@ -95,32 +99,34 @@ export function NightBriefCards({
         ) : (
           <p className="small muted">Nenhum compromisso com horário.</p>
         )}
-        {(brief.tomorrowItems.length > 0 || timedHabits.length > 0) && (
+        {tomorrowRows.length > 0 && (
           <ul className="night-list" role="list" style={{ marginTop: 8 }}>
-            {brief.tomorrowItems.slice(0, 10).map((i) => (
-              <li key={i.key}>
-                <SourceDot item={i} />
-                <span className="night-time">{itemTime(i)}</span>
-                <span className="grow">
-                  {i.title}
-                  {i.source === 'google' && <span className="meta"> · Google</span>}
-                  {!i.busy && <span className="meta"> · livre</span>}
-                </span>
-                {i.flag && <Tag tone="warn">{i.flag === 'prova' ? 'Prova?' : 'Prazo?'}</Tag>}
-              </li>
-            ))}
-            {timedHabits.map((h) => (
-              <li key={h.habit.id}>
-                <span className="night-dot" style={{ background: 'var(--accent)' }} aria-hidden="true" />
-                <span className="night-time">{h.start ? (h.end ? `${h.start}–${h.end}` : h.start) : 'Livre'}</span>
-                <span className="grow">
-                  {h.habit.title} <span className="meta">· hábito</span>
-                </span>
-              </li>
-            ))}
+            {tomorrowRows.slice(0, 12).map((row) =>
+              row.type === 'item' ? (
+                <li key={row.item.key}>
+                  <SourceDot item={row.item} />
+                  <span className="night-time">{itemTime(row.item)}</span>
+                  <span className="grow">
+                    {row.item.title}
+                    {row.item.source === 'google' && <span className="meta"> · Google</span>}
+                    {row.item.kind === 'habit_block' && <span className="meta"> · bloco</span>}
+                    {!row.item.busy && <span className="meta"> · livre</span>}
+                  </span>
+                  {row.item.flag && <Tag tone="warn">{row.item.flag === 'prova' ? 'Prova?' : 'Prazo?'}</Tag>}
+                </li>
+              ) : (
+                <li key={row.habit.habit.id}>
+                  <span className="night-dot" style={{ background: 'var(--accent)' }} aria-hidden="true" />
+                  <span className="night-time">{row.habit.start ? (row.habit.end ? `${row.habit.start}–${row.habit.end}` : row.habit.start) : 'Sem horário'}</span>
+                  <span className="grow">
+                    {row.habit.habit.title} <span className="meta">· hábito</span>
+                  </span>
+                </li>
+              ),
+            )}
           </ul>
         )}
-        {brief.tomorrowItems.length > 10 && <p className="meta">E mais {brief.tomorrowItems.length - 10} na agenda.</p>}
+        {tomorrowRows.length > 12 && <p className="meta">E mais {tomorrowRows.length - 12} na agenda.</p>}
         <p className="field-label" style={{ marginTop: 12 }}>
           Janelas livres
         </p>

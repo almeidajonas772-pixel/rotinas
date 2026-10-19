@@ -2148,13 +2148,13 @@ dialog.dialog::backdrop {
 }
 
 .night-stage .btn-primary {
-  background: #4d6cf0;
-  border-color: #4d6cf0;
+  background: #3b5bdb;
+  border-color: #3b5bdb;
   color: #fff;
 }
 
 .night-stage .btn-primary:hover:not(:disabled) {
-  background: #5d7bff;
+  background: #3452c8;
 }
 
 .night-stage .btn:focus-visible {
@@ -2561,7 +2561,7 @@ dialog.dialog::backdrop {
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  margin-top: var(--s-5);
+  margin: 0 0 var(--s-5);
   padding: var(--s-4);
   border-radius: var(--r-md);
   color: #e9eefc;

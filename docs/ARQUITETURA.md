@@ -19,11 +19,13 @@ Documento técnico do app pessoal **Rotinas** (assistente opcional **Kai**). Com
 | Tema | Decisão | Motivo |
 | --- | --- | --- |
 | App | PWA React 19 + TypeScript 6, Vite 8, `react-router` 7 com `HashRouter` | Base já existente; o hash evita configuração de servidor para rotas e funciona offline com o service worker |
-| Banco local | IndexedDB via Dexie 4 (`rotinas`, versão 2) | Fonte de verdade transacional, com índices e migrações; `localStorage` guarda só preferências leves de interface (prefixo `rotinas:ui:`) |
+| Banco local | IndexedDB via Dexie 4 (`rotinas`, versão 3) | Fonte de verdade transacional, com índices e migrações; `localStorage` guarda só preferências leves de interface (prefixo `rotinas:ui:`) |
 | Validação | Zod 4 em todas as escritas e no servidor | Um único esquema por entidade, mensagens em pt-BR |
 | Datas | Datas civis `AAAA-MM-DD` para recorrência, sequência e métricas; Luxon para fusos | Mudança de fuso ou horário de verão não desloca o dia local |
 | Offline | `vite-plugin-pwa` (Workbox, `registerType: 'prompt'`), pré-cache de JS/CSS/HTML/fontes/ícones | Abre sem internet depois da primeira visita ao build; a API nunca é cacheada |
-| Camada privada | Node + Hono (`server/`), mesma origem via proxy em desenvolvimento ou `npm start` | Segredos e tokens só no servidor; o navegador nunca vê chaves |
+| Camada privada | Node + Hono (`server/`), sempre na mesma origem do app: proxy em desenvolvimento, `npm start` no computador ou função da Vercel (`server/vercel.ts`, Build Output API) | Segredos e tokens só no servidor; o navegador nunca vê chaves |
+| Armazenamento do servidor | Vercel Blob **privado** (OIDC, sem segredo no código) na nuvem; arquivo com permissão 600 no computador | Tokens do Google cifrados e contador diário do Kai sobrevivem entre execuções da função |
+| Voz | Web Speech API do navegador (síntese e reconhecimento), sem serviço extra | Zero custo e zero chave nova; vozes locais por padrão; reconhecimento só com autorização própria |
 | IA | Um adaptador real: Anthropic (`@anthropic-ai/sdk`), saída estruturada por JSON Schema | Pedido do prompt; modelos configuráveis no servidor |
 | Calendário | Google Calendar por OAuth 2.0 para app web, chamadas REST via `fetch` | Sem SDK pesado; escopos mínimos verificáveis |
 | Gráficos | SVG próprio (`src/components/charts.tsx`) com legenda, unidade, método e tabela alternativa | Controle total de acessibilidade e de estados vazios |
@@ -39,11 +41,13 @@ Documento técnico do app pessoal **Rotinas** (assistente opcional **Kai**). Com
   recorrências (mensal, anual) **não** foram implementadas; o tipo de agenda (`kind`) é extensível.
 - Lembretes são notificações locais do navegador disparadas enquanto o app (aba ou PWA instalado)
   está aberto. Push com o app fechado exigiria um serviço de push e servidor sempre ligado — fora do escopo.
-- O Kai só existe com a camada privada rodando e `ANTHROPIC_API_KEY` definida. Sem isso, a interface
-  diz que ele está indisponível e explica como ativar; nenhuma resposta é fabricada.
+- O Kai só existe com a camada privada publicada e `ANTHROPIC_API_KEY` definida. Sem isso, a interface
+  diz exatamente o que falta (tela Conectar Kai e Google); nenhuma resposta é fabricada.
 - O Google Calendar só existe com credenciais OAuth configuradas pela pessoa no Google Cloud.
+- A "noite" de um dia vai até 04:00 do dia seguinte: quem fecha o dia depois da meia-noite continua
+  fechando o dia anterior (`nightDateFor`).
 
-## 4. Modelo de dados (IndexedDB, versão 2)
+## 4. Modelo de dados (IndexedDB, versão 3)
 
 Índices em `src/db/db.ts`; esquemas Zod em `src/domain/schemas.ts`. Toda escrita passa por um
 repositório em `src/db/repo-*.ts`, dentro de transação.
@@ -51,7 +55,7 @@ repositório em `src/db/repo-*.ts`, dentro de transação.
 | Tabela | Chave e índices | Conteúdo |
 | --- | --- | --- |
 | `profile` | `id` (`me`) | nome opcional, fuso, objetivo principal, disponibilidade (períodos, minutos/dia, janelas), datas |
-| `prefs` | `id` (`prefs`) | tema, início da semana, consentimentos versionados (`kai`, `kaiCheckins`, `kaiJournal`, `calendar`, `notifications`), notificações (canal, silêncio, dias, limite diário), recursos (check-in), senha opcional do servidor |
+| `prefs` | `id` (`prefs`) | tema, início da semana, consentimentos versionados (`kai`, `kaiCheckins`, `kaiJournal`, `kaiAgenda`, `calendar`, `voice`, `notifications`), notificações (canal, silêncio, dias, limite diário), recursos (check-in), senha do servidor, noite (lembrete, voz, velocidade, conversa contínua) |
 | `habits` | `id`, `status`, `order`, `goalId` | título, intenção, categoria, `scheduleHistory` (versões com data de início), `pauses`, horário/janela, duração, lembrete, XP, primeiro passo, meta |
 | `completions` | `id` = `hábito\|data`, `habitId`, `scheduledDate`, `[habitId+scheduledDate]` | estado `done`/`skipped`, horário real, fuso no momento do registro, observação, XP gravado, origem (`manual`; o valor `calendar` está reservado — nesta versão nenhuma integração cria conclusões) |
 | `agendaItems` | `id`, `seriesKind`, `[seriesKind+date]`, `kind`, `habitId`, `goalId` | tipo (`task`, `event`, `habit`), título, data, dia inteiro ou início/fim, fuso do item, recorrência, exceções por ocorrência, meta, origem (`manual`, `proposal`, `kai`), referência externa |
@@ -63,11 +67,19 @@ repositório em `src/db/repo-*.ts`, dentro de transação.
 | `progressEvents` | `id`, `type`, `refId`, `localDate` | XP derivado: `habit:<conclusão>`, `agenda:<conclusão>`, `goal:<meta>` |
 | `kaiInsights` / `kaiConversations` | `id`, `kind`/`updatedAt`, `createdAt` | resultados estruturados do Kai com período, categorias de dados enviados, modelo, estado |
 | `integrations` | `id` | provedor, estado, escopos, data de autorização — **sem tokens** |
-| `notificationLog` | `id`, `date` | quais lembretes já foram mostrados (idempotência e limite diário) |
+| `notificationLog` | `id`, `date` | quais lembretes já foram mostrados (`habit_reminder`, `night_reminder`): idempotência e limite diário |
+| `dayPlans` | `date` | prioridade nº 1 do dia (texto, origem manual/voz/Kai) e resultado (cumprida ou não) |
+| `nightSessions` | `id` (= data), `date`, `updatedAt` | conversa da noite (até 120 falas), propostas do Kai com estado (pendente, aceita, dispensada, item criado) e evidências descritas pelo app |
 
 **Migrações.** `version(1)` → `version(2)` adiciona `notificationLog` e completa preferências e
-hábitos antigos (`src/db/migrations.ts`). A mesma função migra backups antigos na importação. Um
-banco gravado por versão mais nova é recusado com mensagem clara.
+hábitos antigos; `version(3)` adiciona `dayPlans` e `nightSessions`, as preferências da noite e as
+autorizações `kaiAgenda` e `voice` (desligadas). As mesmas funções migram backups antigos na
+importação. Um banco gravado por versão mais nova é recusado com mensagem clara.
+
+**Versão do texto de cada autorização.** `CONSENT_VERSIONS` (`src/db/defaults.ts`) guarda a versão
+vigente de cada texto. Uma autorização concedida para um texto anterior não é apagada do banco, mas
+o app a enxerga desligada (`effectivePrefs`, com `outdated: true`) até a pessoa revisar o texto novo.
+Nesta versão mudaram `kai` (inclui a sessão da noite) e `calendar` (inclui a leitura de eventos).
 
 ## 5. Regras de cálculo (determinísticas e testadas)
 
@@ -118,16 +130,54 @@ contagem de tokens — nunca o conteúdo. Crise, saúde, medicamentos e finança
 proíbe aconselhamento especializado, a resposta marca `supportNotice` e a interface mostra CVV (188)
 e SAMU (192).
 
+### 6.1 Sessão da noite
+
+- `src/domain/nightly.ts` calcula no aparelho o **resumo da noite** (função pura, testada): hábitos de
+  hoje com estado e "ainda dá tempo", XP do dia, tarefas de hoje, agenda de amanhã (Rotinas + eventos do
+  Google convertidos para o fuso do perfil), horários dos hábitos de amanhã, **janelas livres** (janelas
+  de disponibilidade menos compromissos com horário), primeiro compromisso, **radar de provas e
+  prazos** dos próximos 7 dias (palavras do título, sem acentos; inclui siglas locais como “AGI”),
+  ritmo das metas (progresso atual × esperado para os dias já passados) e sinais factuais.
+- Sem o Kai, o app lê esse resumo em voz alta (`nightSpeech`), sem IA e sem rede.
+- Com o Kai, `src/domain/nightly-kai.ts` monta `NightlyContext`: números do dia e referências curtas;
+  itens de agenda viram `t1` (hoje), `a1` (amanhã) e `u1` (próximos dias) **só com a autorização
+  `kaiAgenda`**; sem ela, sinais que citam a agenda são omitidos. O check-in de hoje só entra com a
+  autorização de check-ins. O nome nunca vai.
+- `POST /api/kai/nightly` usa o modelo rápido (até 1.000 tokens), histórico de até 16 falas e um
+  roteiro próprio: fala curta para síntese de voz, uma pergunta por vez, até 3 propostas com
+  referências. O servidor descarta referências inexistentes, só mantém horário de `bloco_amanha` que
+  caiba numa janela livre enviada e não sobreponha a agenda (senão vira `tarefa_amanha`, sem horário).
+- Aceitar uma proposta cria o item na agenda do Rotinas (origem `kai`) e guarda o id para desfazer.
+  A prioridade nº 1 vai para `dayPlans` do dia seguinte e aparece em Hoje; na noite seguinte, o resumo
+  pergunta se foi cumprida (`lastPriority`).
+
+### 6.2 Voz
+
+- `src/lib/speech.ts`: síntese com escolha de voz (português do Brasil, vozes locais primeiro; vozes
+  online só com a autorização `voice`), texto dividido em frases curtas e "destravamento" no primeiro
+  toque (iOS); reconhecimento de uma frase por vez (`continuous = false`, parciais na tela).
+- O reconhecimento exige a autorização `voice`, porque o navegador pode enviar o áudio ao fabricante.
+  O Rotinas não grava áudio; só o texto reconhecido segue (e só vai ao Kai com a autorização do Kai).
+- Apps instalados na Tela de Início do iPad/iPhone não têm reconhecimento de fala do navegador
+  (WebKit, bug 225298): a tela detecta e orienta usar o ditado do teclado. A síntese continua.
+- `Permissions-Policy: microphone=(self)` libera o microfone só para o próprio site.
+
 ## 7. Google Calendar (Etapa 4)
 
-- Escopos: `calendar.freebusy` (somente livre/ocupado, sem títulos ou detalhes) e, só se a pessoa
-  pedir para criar blocos, `calendar.app.created` (cria uma agenda secundária “Rotinas” e gerencia
-  apenas os eventos dela). Nenhum escopo de leitura de eventos é solicitado.
-- OAuth para app web: `state` aleatório de uso único (10 min), troca de código no servidor, tokens
-  criptografados em repouso (AES‑256‑GCM, chave `TOKEN_ENCRYPTION_KEY`, arquivo com permissão 600).
-- Escrita em duas fases: **prévia** (valida blocos, consulta conflitos e devolve um `previewId` de uso
-  único válido por 10 min) e **confirmação** (`confirm: true` + `previewId`). Sem as duas, o servidor
-  recusa. A interface mostra horário, duração e conflitos e pede confirmação num diálogo próprio.
+- Escopos, pedidos só quando a pessoa escolhe: `calendar.freebusy` (livre/ocupado), opcionalmente
+  `calendar.events.owned.readonly` (título, horário, cor e disponibilidade dos eventos da agenda
+  principal — o servidor pede só esses campos ao Google, nunca descrição, local ou participantes) e,
+  para criar blocos, `calendar.app.created` (agenda secundária “Rotinas”). `include_granted_scopes`
+  soma as permissões.
+- OAuth para app web, sem estado em memória entre execuções (necessário na função da Vercel):
+  `state` **assinado** (HMAC, 10 min) e de uso único por instância; troca de código no servidor; tokens
+  cifrados em repouso (AES‑256‑GCM) no Blob privado ou em arquivo. A autorização abre numa aba/folha
+  própria (link preparado com antecedência, sem bloqueio de pop-up); a página de retorno não redireciona
+  e o app atualiza o estado quando volta ao primeiro plano.
+- Escrita em duas fases: **prévia** (valida blocos, consulta conflitos e devolve um comprovante
+  assinado, válido por 10 min e preso ao hash dos blocos) e **confirmação** (`confirm: true` + o
+  comprovante + os mesmos blocos). Cada evento recebe um id determinístico derivado do comprovante:
+  confirmar de novo (ex.: resposta perdida) não duplica, e uma falha parcial é completada sem duplicar.
 - Os itens continuam nascendo na agenda do Rotinas (fonte de verdade); o evento externo fica como
   referência (`external`). Apagar no app não apaga no Google (avisado na tela).
 - Desconectar revoga o token no Google e apaga o arquivo de tokens. Se o Google responder
@@ -136,12 +186,19 @@ e SAMU (192).
 
 ## 8. Segurança da camada privada
 
-- Segredos apenas em variáveis de ambiente (`.env` fora do controle de versão; `.env.example` sem valores).
-- Para métodos que alteram estado: origem precisa estar na lista permitida; corpo precisa ser JSON
-  (bloqueia formulários de outros sites); senha opcional `ROTINAS_SERVER_TOKEN` comparada em tempo constante.
-- Servidor escuta em `127.0.0.1` por padrão e avisa se for exposto sem senha.
-- `npm start` envia cabeçalhos de segurança (CSP restritiva, `X-Content-Type-Options`,
-  `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`).
+- Segredos apenas em variáveis de ambiente (`.env` fora do controle de versão; na Vercel, variáveis
+  marcadas como Sensitive). `.env.example` sem valores.
+- **Na nuvem a senha é obrigatória**: sem `ROTINAS_SERVER_TOKEN` (12+ caracteres) todas as rotas
+  respondem `server_locked`, exceto o retorno do OAuth (que também se recusa a concluir). Comparação em
+  tempo constante; 10 tentativas erradas em 10 minutos bloqueiam o endereço por 10 minutos.
+- Sem `TOKEN_ENCRYPTION_KEY`, as chaves de cifra e de assinatura são derivadas da senha (scrypt +
+  HMAC com rótulos distintos). Trocar a senha invalida os tokens guardados (o Google aparece como
+  desconectado e basta reconectar).
+- Para métodos que alteram estado: a origem precisa ser a do próprio site (lista permitida ou mesmo
+  host atrás do proxy) e o corpo precisa ser JSON (bloqueia formulários de outros sites).
+- Cabeçalhos de segurança no `npm start` e na Vercel (mesma fonte, `shared/security-headers.ts`): CSP
+  restritiva, `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `COOP` e
+  `Permissions-Policy` (câmera e localização bloqueadas; microfone só no próprio site).
 - **Esta versão não passou por auditoria de segurança nem por revisão jurídica.** Antes de expor o
   servidor fora do seu computador, ou de usar o app com dados de outras pessoas, essas revisões são necessárias.
 
@@ -150,10 +207,23 @@ e SAMU (192).
 | Camada | Onde | O que prova | O que **não** prova |
 | --- | --- | --- | --- |
 | Domínio | `tests/unit/*` | recorrência, fuso e horário de verão, sequência, taxa, XP/nível, metas, agenda, relatórios, contexto e evidências do Kai, lembretes | — |
-| Banco | `tests/db/repos.test.ts` (fake-indexeddb) | CRUD, idempotência, migração v1→v2, backup/restauração, privacidade do Diário, consentimentos, limpeza | comportamento de cotas de cada navegador |
-| Servidor | `tests/server/*` | rotas do Kai com provedor dublê; OAuth/Calendar com `fetch` dublê; criptografia de tokens; limites e proteções | chamadas reais à Anthropic ou ao Google |
-| Componentes | `tests/components/*` | onboarding com e sem IA, Hoje, falha honesta do Kai, Diário privado, relatório vazio, ausência de rede | — |
+| Domínio (noite e voz) | `tests/unit/nightly.test.ts`, `tests/unit/speech.test.ts` | resumo da noite, virada depois da meia-noite, janelas livres, eventos do Google em fuso local, provas e prazos, ritmo de metas, fala do app, dados enviados com e sem autorização da agenda, lembrete da noite, escolha de voz e reconhecimento | vozes e reconhecimento reais de cada navegador |
+| Banco | `tests/db/repos.test.ts` (fake-indexeddb) | CRUD, idempotência, migrações v1→v3 e v2→v3, versões de texto das autorizações, prioridade do dia, sessões da noite, backup/restauração, privacidade do Diário, consentimentos, limpeza | comportamento de cotas de cada navegador |
+| Servidor | `tests/server/*` | rotas do Kai (inclusive a noite) com provedor dublê; OAuth/Calendar com `fetch` dublê (state assinado, eventos, prévia e confirmação idempotentes, falha parcial, `invalid_grant`); modo nuvem (senha, bloqueio, origem atrás do proxy, Blob); assinaturas; entrada da Vercel | chamadas reais à Anthropic, ao Google ou ao Blob |
+| Componentes | `tests/components/*` | onboarding com e sem IA, Hoje (prioridade do dia), Noite sem e com Kai (dados enviados, proposta aceita, prioridade), assistente de conexão, falha honesta do Kai, Diário privado, relatório vazio, ausência de rede | — |
 | Ponta a ponta | `e2e/*` (Chromium, móvel e desktop, build de produção) | primeiro uso → hábito → conclusão → recarga → histórico; offline; backup, limpeza e restauração; metas; agenda recorrente; acessibilidade (axe) e ausência de requisições externas | Kai e Google reais (o e2e roda sem a camada privada) |
 
 Testar o Kai e o Google de verdade depende de credenciais suas (ver README, seções “Ativar o Kai” e
-“Conectar o Google Calendar”).
+“Conectar o Google Calendar”). A tela **Conectar Kai e Google** faz um teste real do Kai, sem dados pessoais.
+
+## 10. Publicação na Vercel
+
+- `vercel.json` manda a Vercel rodar `npm run build:vercel`: `vite build` gera o app e
+  `scripts/build-vercel.mjs` monta `.vercel/output` (Build Output API v3) com o app estático, a função
+  `api.func` (Node 22, um arquivo empacotado com esbuild) e as rotas (cabeçalhos, arquivos estáticos e
+  `/api/*` → função, preservando o caminho original).
+- A função cria o app Hono uma vez por instância e lê a configuração das variáveis do projeto;
+  `VERCEL=1` liga o modo nuvem. O domínio de produção (`VERCEL_PROJECT_PRODUCTION_URL`) define a origem
+  aceita e o endereço de retorno do Google.
+- Limites: o limite por minuto do Kai vale por instância; o teto diário fica no Blob (falha aberta se o
+  armazenamento não responder — o limite de gasto do Console é o teto definitivo).

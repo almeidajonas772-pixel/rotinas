@@ -11,6 +11,7 @@ import { go, onboard, trackConsoleErrors, trackNetwork } from './helpers';
 
 const ROUTES: Array<[string, string]> = [
   ['#/', 'Hoje'],
+  ['#/noite', 'Noite'],
   ['#/habitos', 'Hábitos'],
   ['#/habitos/novo', 'Novo hábito'],
   ['#/metas', 'Metas'],
@@ -20,6 +21,7 @@ const ROUTES: Array<[string, string]> = [
   ['#/diario', 'Diário'],
   ['#/kai', 'Kai'],
   ['#/calendario', 'Calendário externo'],
+  ['#/conexoes', 'Conectar Kai e Google'],
   ['#/configuracoes', 'Configurações'],
   ['#/configuracoes/privacidade', 'Privacidade'],
   ['#/mais', 'Mais'],
@@ -72,7 +74,7 @@ test('todas as telas: título, layout, acessibilidade e rede', async ({ page, ba
 
   // Tema escuro também precisa passar no contraste.
   await page.emulateMedia({ colorScheme: 'dark' });
-  for (const [hash] of [ROUTES[0], ROUTES[6]]) {
+  for (const [hash] of [ROUTES[0], ROUTES[1], ROUTES[7]]) {
     await go(page, hash);
     await page.waitForTimeout(150);
     const axe = await new AxeBuilder({ page }).withTags(['wcag2aa']).analyze();

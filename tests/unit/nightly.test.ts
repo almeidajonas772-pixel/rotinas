@@ -31,6 +31,9 @@ describe('noite: datas, horários e sinais simples', () => {
     expect(detectFlag('P2 de Cálculo')).toBe('prova');
     expect(detectFlag('AVALIAÇÃO bimestral')).toBe('prova');
     expect(detectFlag('Simulado ENEM')).toBe('prova');
+    expect(detectFlag('AGI — Estudos Linguísticos')).toBe('prova');
+    expect(detectFlag('Fuvest 1ª fase')).toBe('prova');
+    expect(detectFlag('Agilidade no treino')).toBeUndefined();
     expect(detectFlag('Entrega do trabalho de História')).toBe('prazo');
     expect(detectFlag('Questionário 3 fecha')).toBe('prazo');
     expect(detectFlag('Vencimento do boleto')).toBe('prazo');

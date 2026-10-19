@@ -144,7 +144,8 @@ export function nightDateFor(now: Date, timeZone: string): CivilDate {
 
 // ── Provas e prazos ─────────────────────────────────────────────────────────
 
-const EXAM_RE = /\b(prova|provas|p[1-4]|av[1-4]|ap[1-4]|avaliacao|avaliacoes|exame|exames|teste|simulado|simulados|quiz|vestibular|enem|recuperacao)\b/;
+// "agi": nome da prova de Português (Estudos Linguísticos) no colégio da pessoa que usa o app.
+const EXAM_RE = /\b(prova|provas|p[1-4]|av[1-4]|ap[1-4]|agi|avaliacao|avaliacoes|exame|exames|teste|simulado|simulados|quiz|vestibular|enem|fuvest|recuperacao)\b/;
 const DEADLINE_RE = /\b(prazo|prazos|entrega|entregar|deadline|vence|vencimento|submissao|submeter|fecha|encerra|ultimo dia)\b/;
 
 function normalizeTitle(title: string): string {
