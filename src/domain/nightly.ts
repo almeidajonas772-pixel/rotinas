@@ -134,6 +134,8 @@ export interface NightInput {
   tomorrowPlan?: DayPlan | null;
   /** Eventos da agenda principal do Google (se a leitura de eventos estiver conectada). */
   googleEvents?: readonly GoogleEvent[];
+  /** Cores do Google que a pessoa usa para provas e prazos (opcional). */
+  flagColors?: FlagColors;
 }
 
 /** Dia que a noite fecha: depois da meia-noite (até 04:00), ainda é o dia anterior. */
@@ -144,22 +146,40 @@ export function nightDateFor(now: Date, timeZone: string): CivilDate {
 
 // ── Provas e prazos ─────────────────────────────────────────────────────────
 
-// "agi": nome da prova de Português (Estudos Linguísticos) no colégio da pessoa que usa o app.
-const EXAM_RE = /\b(prova|provas|p[1-4]|av[1-4]|ap[1-4]|agi|avaliacao|avaliacoes|exame|exames|teste|simulado|simulados|quiz|vestibular|enem|fuvest|recuperacao)\b/;
-const DEADLINE_RE = /\b(prazo|prazos|entrega|entregar|deadline|vence|vencimento|submissao|submeter|fecha|encerra|ultimo dia)\b/;
+// Palavras de prova (sem acentos). "agi": nome da prova de Português (Estudos Linguísticos) no
+// colégio da pessoa que usa o app; "maratona", "intermediaria", "somativa" e "trimestral" também
+// aparecem nos nomes das avaliações da escola.
+const EXAM_RE =
+  /\b(prova|provas|p[1-4]|av[1-4]|ap[1-4]|agi|avaliacao|avaliacoes|exame|exames|teste|simulado|simulados|quiz|vestibular|enem|fuvest|recuperacao|maratona|intermediaria|somativa|trimestral|bimestral|dissertacao)\b/;
+const DEADLINE_RE = /\b(prazo|prazos|entrega|entregar|deadline|vence|vencimento|submissao|submeter|fecha|encerra|ultimo dia|homework|tarefa|tarefas|exercicios|moodle|self study|temas? \d+|lista de)\b/;
+/** Eventos de preparação ("véspera da prova", "estudar para a prova") não são a prova em si. */
+const PREP_RE = /\b(vespera|amanha|estudo|estudar|revisao|revisar|bloco|preparar|preparacao|aula|aulas|reforco|plantao)\b/;
 
 function normalizeTitle(title: string): string {
   return title
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 }
 
-/** Marca provas e prazos pelo título (heurística simples e transparente; pode errar). */
-export function detectFlag(title: string): ItemFlag | undefined {
+export interface FlagColors {
+  prova: readonly string[];
+  prazo: readonly string[];
+}
+
+/**
+ * Marca provas e prazos (heurística simples e transparente; pode errar):
+ * 1. eventos de preparação ou aula nunca são marcados;
+ * 2. palavras do título (prova, avaliação, AGI, entrega, prazo…);
+ * 3. se a pessoa indicou, a cor do evento no Google (ex.: laranja = avaliação, vermelho = prazo).
+ */
+export function detectFlag(title: string, colorId?: string, colors?: FlagColors): ItemFlag | undefined {
   const t = normalizeTitle(title);
+  if (PREP_RE.test(t)) return undefined;
   if (EXAM_RE.test(t)) return 'prova';
   if (DEADLINE_RE.test(t)) return 'prazo';
+  if (colorId && colors?.prova.includes(colorId)) return 'prova';
+  if (colorId && colors?.prazo.includes(colorId)) return 'prazo';
   return undefined;
 }
 
@@ -209,8 +229,8 @@ export function freeWindowsFrom(windows: readonly TimeWindow[], busy: readonly B
 // ── Google ──────────────────────────────────────────────────────────────────
 
 /** Converte um evento do Google para os dias e horários do fuso do perfil; devolve uma entrada por dia coberto no intervalo. */
-export function googleEventDays(event: GoogleEvent, from: CivilDate, to: CivilDate, timeZone: string): NightAgendaItem[] {
-  const base = { title: event.title, kind: 'google' as const, source: 'google' as const, busy: event.busy, colorId: event.colorId, flag: detectFlag(event.title) };
+export function googleEventDays(event: GoogleEvent, from: CivilDate, to: CivilDate, timeZone: string, colors?: FlagColors): NightAgendaItem[] {
+  const base = { title: event.title, kind: 'google' as const, source: 'google' as const, busy: event.busy, colorId: event.colorId, flag: detectFlag(event.title, event.colorId, colors) };
   const out: NightAgendaItem[] = [];
   if (event.allDay) {
     // Datas do Google: início inclusivo, fim exclusivo.
@@ -311,7 +331,7 @@ export function computeNightBrief(input: NightInput): NightBrief {
     flag: o.kind === 'habit' ? undefined : detectFlag(o.title),
     habitId: o.habitId,
   }));
-  const google = (input.googleEvents ?? []).flatMap((e) => googleEventDays(e, tomorrow, radarEnd, tz));
+  const google = (input.googleEvents ?? []).flatMap((e) => googleEventDays(e, tomorrow, radarEnd, tz, input.flagColors));
   const all = sortAgendaItems([...rotinas, ...google]);
   const tomorrowItems = all.filter((i) => i.date === tomorrow);
   const radar = all.filter((i) => i.flag && i.kind !== 'habit_block').slice(0, 30);

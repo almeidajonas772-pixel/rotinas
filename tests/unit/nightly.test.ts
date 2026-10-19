@@ -34,12 +34,29 @@ describe('noite: datas, horários e sinais simples', () => {
     expect(detectFlag('AGI — Estudos Linguísticos')).toBe('prova');
     expect(detectFlag('Fuvest 1ª fase')).toBe('prova');
     expect(detectFlag('Agilidade no treino')).toBeUndefined();
+    expect(detectFlag('Avaliação Intermediária — Biologia')).toBe('prova');
+    expect(detectFlag('Maratona de Química')).toBe('prova');
+    expect(detectFlag('RC4 Class 4 Grammar Homework')).toBe('prazo');
+    expect(detectFlag('Física — Temas 08, 09 e 10')).toBe('prazo');
+    // Preparação e aulas não são a prova em si.
+    expect(detectFlag('Port. Est. Linguísticos (véspera do AGI)')).toBeUndefined();
+    expect(detectFlag('Filosofia (dissertação amanhã)')).toBeUndefined();
+    expect(detectFlag('Aula de Química')).toBeUndefined();
     expect(detectFlag('Entrega do trabalho de História')).toBe('prazo');
     expect(detectFlag('Questionário 3 fecha')).toBe('prazo');
     expect(detectFlag('Vencimento do boleto')).toBe('prazo');
     expect(detectFlag('Aula de Química')).toBeUndefined();
     expect(detectFlag('Comprovante de residência')).toBeUndefined();
     expect(detectFlag('Reunião de equipe')).toBeUndefined();
+  });
+
+  it('usa as cores do Google indicadas pela pessoa quando o título não basta', () => {
+    const colors = { prova: ['6'], prazo: ['11'] };
+    expect(detectFlag('Atividades conceituais + Autoavaliação', '11', colors)).toBe('prazo');
+    expect(detectFlag('Evento sem palavra-chave', '6', colors)).toBe('prova');
+    expect(detectFlag('Evento sem palavra-chave', '5', colors)).toBeUndefined();
+    expect(detectFlag('Química — REFORÇO', '6', colors)).toBeUndefined();
+    expect(detectFlag('Evento sem palavra-chave', '6')).toBeUndefined();
   });
 
   it('calcula janelas livres a partir da disponibilidade e dos compromissos', () => {

@@ -160,6 +160,10 @@ Todas as noites, abra **Noite** (ou toque no convite que aparece em **Hoje** dep
   conversa por voz funciona direto na esfera. No **iPad com o app instalado na Tela de Início**, o
   Safari não libera o reconhecimento de fala para apps instalados: use o microfone do teclado no campo
   de texto — a resposta continua sendo lida em voz alta.
+- **Cores do Google:** se você pinta provas e prazos com cores próprias no Google Agenda (por exemplo,
+  laranja para avaliações e vermelho para prazos do Moodle), marque essas cores em **Noite → Ajustes da
+  noite**: eventos delas entram no radar mesmo sem palavras-chave no título. Aulas, reforços e blocos de
+  estudo nunca entram.
 - **Lembrete da noite** (opcional): notificação local no horário escolhido, com o app aberto.
 - A conversa fica só no aparelho (entra no backup e pode ser apagada em **Recomeçar**).
 

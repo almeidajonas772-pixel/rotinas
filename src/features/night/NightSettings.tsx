@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { GOOGLE_EVENT_COLORS } from '../../../shared/calendar';
 import { useApp } from '../../app/context';
 import { SelectField, SwitchRow, TextField } from '../../components/form';
 import { useToast } from '../../components/toast';
@@ -9,7 +10,22 @@ import type { ConsentKey } from '../../domain/schemas';
 import { notificationPermission } from '../../lib/notifications';
 import type { VoiceApi } from './use-voice';
 
-/** Ajustes da sessão da noite: voz, autorizações específicas e lembrete. */
+/** Nomes das cores de evento do Google Agenda (colorId 1–11), com a cor comum entre parênteses. */
+const GOOGLE_COLOR_NAMES: Array<[string, string]> = [
+  ['6', 'Tangerina (laranja)'],
+  ['11', 'Tomate (vermelho)'],
+  ['5', 'Banana (amarelo)'],
+  ['4', 'Flamingo (rosa)'],
+  ['3', 'Uva (roxo)'],
+  ['1', 'Lavanda (lilás)'],
+  ['9', 'Mirtilo (azul-escuro)'],
+  ['7', 'Pavão (azul)'],
+  ['10', 'Manjericão (verde)'],
+  ['2', 'Sálvia (verde-claro)'],
+  ['8', 'Grafite (cinza)'],
+];
+
+/** Ajustes da sessão da noite: voz, autorizações específicas, cores do radar e lembrete. */
 export function NightSettings({ voice, onAsk }: { voice: VoiceApi; onAsk: (key: ConsentKey) => void }) {
   const { prefs } = useApp();
   const toast = useToast();
@@ -20,6 +36,14 @@ export function NightSettings({ voice, onAsk }: { voice: VoiceApi; onAsk: (key: 
     void setConsent(key, false)
       .then(() => toast.show('Autorização revogada.'))
       .catch((e) => toast.show(describeError(e), { tone: 'danger' }));
+
+  /** Uma cor indica um tipo só: marcar em "provas" tira de "prazos" e vice-versa. */
+  const toggleColor = (kind: 'prova' | 'prazo', id: string) => {
+    const other = kind === 'prova' ? 'prazo' : 'prova';
+    const current = n.flagColors ?? { prova: [], prazo: [] };
+    const list = current[kind].includes(id) ? current[kind].filter((c) => c !== id) : [...current[kind], id];
+    set({ flagColors: { ...current, [kind]: list, [other]: current[other].filter((c) => c !== id) } as NonNullable<typeof n.flagColors> });
+  };
 
   const ptVoices = voice.voices.filter((v) => v.lang.toLowerCase().startsWith('pt'));
   const listed = ptVoices.length > 0 ? ptVoices : voice.voices;
@@ -102,6 +126,30 @@ export function NightSettings({ voice, onAsk }: { voice: VoiceApi; onAsk: (key: 
         disabled={!prefs.consents.kai.granted}
         onChange={(on) => (on ? onAsk('kaiAgenda') : revoke('kaiAgenda'))}
       />
+
+      <fieldset className="night-colors">
+        <legend className="switch-label">Cores do Google para provas e prazos</legend>
+        <p className="meta">
+          Se você pinta avaliações e prazos com cores próprias no Google Agenda, marque-as: eventos dessas cores entram no radar mesmo sem palavras como “prova” ou “entrega” no título. Aulas,
+          reforços e blocos de estudo nunca entram.
+        </p>
+        {(['prova', 'prazo'] as const).map((kind) => (
+          <div key={kind} className="night-color-row">
+            <p className="field-label">{kind === 'prova' ? 'Provas e avaliações' : 'Prazos e entregas'}</p>
+            <div className="chips">
+              {GOOGLE_COLOR_NAMES.map(([id, name]) => {
+                const on = (n.flagColors?.[kind] ?? []).includes(id);
+                return (
+                  <button key={id} type="button" className="chip" aria-pressed={on} onClick={() => toggleColor(kind, id)}>
+                    <span className="month-dot" style={{ background: GOOGLE_EVENT_COLORS[id] }} aria-hidden="true" />
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </fieldset>
 
       <SwitchRow
         label="Lembrete da noite"

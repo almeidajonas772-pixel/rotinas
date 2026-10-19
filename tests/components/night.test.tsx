@@ -102,7 +102,8 @@ describe('Noite sem IA', () => {
     await user.click(await screen.findByRole('button', { name: 'Ouvir o resumo' }));
     await user.type(await screen.findByLabelText('Sua resposta'), 'Revisar o capítulo 3{Enter}');
     const field = await screen.findByLabelText('Prioridade de amanhã');
-    expect(field).toHaveValue('Revisar o capítulo 3');
+    // O rascunho chega depois que a fala é registrada na conversa.
+    await waitFor(() => expect(field).toHaveValue('Revisar o capítulo 3'));
     const tomorrow = addDays(nightDateFor(new Date(), TZ), 1);
     expect(await db.dayPlans.get(tomorrow)).toBeUndefined();
     await user.click(screen.getByRole('button', { name: 'Salvar prioridade' }));

@@ -114,6 +114,13 @@ export const preferencesSchema = z.object({
     rate: z.number().min(0.7).max(1.4),
     /** Depois que o Kai fala, o microfone volta a ouvir sozinho (onde o navegador permite). */
     handsFree: z.boolean(),
+    /** Cores de evento do Google (colorId 1–11) que a pessoa usa para provas e para prazos. */
+    flagColors: z
+      .object({
+        prova: z.array(z.string().regex(/^(?:[1-9]|1[01])$/)).max(11),
+        prazo: z.array(z.string().regex(/^(?:[1-9]|1[01])$/)).max(11),
+      })
+      .optional(),
   }),
   updatedAt: isoInstantSchema,
 });

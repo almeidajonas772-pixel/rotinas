@@ -132,8 +132,9 @@ export function NightPage() {
       todayPlan,
       tomorrowPlan,
       googleEvents,
+      flagColors: prefs.nightly.flagColors,
     });
-  }, [now, profile, habits, completions, items, agendaCompletions, goals, goalCtx, progressEvents, checkins, todayPlan, tomorrowPlan, googleEvents]);
+  }, [now, profile, habits, completions, items, agendaCompletions, goals, goalCtx, progressEvents, checkins, todayPlan, tomorrowPlan, googleEvents, prefs.nightly.flagColors]);
 
   const kaiReady = kai.state === 'ready';
   const messages = session?.messages ?? [];

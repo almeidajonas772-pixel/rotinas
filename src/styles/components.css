@@ -2671,3 +2671,24 @@ dialog.dialog::backdrop {
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }
+
+.night-colors {
+  margin: var(--s-3) 0;
+  padding: var(--s-3) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.night-colors legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.night-color-row {
+  margin-top: var(--s-3);
+}
+
+.night-color-row .chip {
+  gap: 6px;
+}
