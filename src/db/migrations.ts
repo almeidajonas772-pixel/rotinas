@@ -13,7 +13,7 @@ import { CONSENT_TEXT_VERSION, DEFAULT_NIGHTLY } from './defaults';
  *       preferências `nightly` e as autorizações `kaiAgenda` e `voice` (começam desligadas).
  */
 
-export const DB_SCHEMA_VERSION = 3;
+export const DB_SCHEMA_VERSION = 4;
 
 type Loose = Record<string, unknown>;
 
@@ -64,6 +64,9 @@ export function migrateTables(tables: Record<string, Loose[]>, fromVersion: numb
       dayPlans: current.dayPlans ?? [],
       nightSessions: current.nightSessions ?? [],
     };
+  }
+  if (fromVersion < 4) {
+    current = { ...current, moneyEntries: current.moneyEntries ?? [], budgets: current.budgets ?? [] };
   }
   return current;
 }

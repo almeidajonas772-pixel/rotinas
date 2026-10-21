@@ -15,6 +15,7 @@ const LOCAL_DATA = [
   'Diário e check-ins',
   'Histórico de conversas e análises do Kai',
   'Sessões da noite (conversas) e a prioridade nº 1 de cada dia',
+  'Dinheiro: gastos, entradas, categorias e limites mensais (nunca vão ao Kai)',
   'Estado da conexão com o Google Calendar (sem tokens). Eventos lidos do Google ficam só na memória enquanto o app está aberto',
 ];
 

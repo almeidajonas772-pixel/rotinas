@@ -228,7 +228,19 @@ Testar o Kai e o Google de verdade depende de credenciais suas (ver README, seç
 - Limites: o limite por minuto do Kai vale por instância; o teto diário fica no Blob (falha aberta se o
   armazenamento não responder — o limite de gasto do Console é o teto definitivo).
 
-## 11. Rotinas dentro do Claude (sem custo extra)
+## 11. Dinheiro (versão 4 do banco)
+
+- Tabelas novas `moneyEntries` (`id, date, kind, category`) e `budgets` (`id` = categoria normalizada).
+  A migração para a v4 só cria tabelas; backups antigos ganham listas vazias (`migrateTables`).
+- Valores em centavos inteiros (`amountCents`), nunca ponto flutuante; leitura tolerante do que se
+  digita (`parseMoney`: “12,50”, “1.234,56”, “R$ 25”).
+- Regras puras em `src/domain/money.ts` (testadas em `tests/unit/money.test.ts`): períodos de mês e
+  ano com o anterior, totais, ranking por categoria (acentos e maiúsculas não separam categorias),
+  séries por dia/mês/ano, limites, projeção do mês e observações determinísticas.
+- Sincronização: pacotes por mês (`c~moneyEntries~AAAA-MM`) e um pacote de limites (`c~budgets`).
+- Privacidade: os lançamentos nunca entram no contexto do Kai.
+
+## 12. Rotinas dentro do Claude (sem custo extra)
 
 Motivo: a única parte paga era o Kai pela API da Anthropic (e, para o Google, um projeto próprio no
 Google Cloud). Dentro do Claude, o app usa as capacidades da plataforma de artifacts (contrato 0.2.87):

@@ -330,6 +330,8 @@ export interface MeterRow {
   valueLabel: string;
   marker?: number;
   markerLabel?: string;
+  /** `danger`: a barra fica vermelha (ex.: passou do limite). */
+  tone?: 'danger';
 }
 
 /** Barras horizontais (medidores) — leitura direta por lista, acessível sem o gráfico. */
@@ -345,7 +347,7 @@ export function MeterList({ rows, ariaLabel }: { rows: MeterRow[]; ariaLabel: st
               <span className="meter-name">{r.label}</span>
               <span className="num small">{r.valueLabel}</span>
             </div>
-            <div className="meter" aria-hidden="true">
+            <div className={`meter${r.tone === 'danger' ? ' is-over' : ''}`} aria-hidden="true">
               <span style={{ width: `${pct}%` }} />
               {mk !== undefined && <i style={{ left: `calc(${mk}% - 1px)` }} title={r.markerLabel} />}
             </div>
@@ -353,5 +355,102 @@ export function MeterList({ rows, ariaLabel }: { rows: MeterRow[]; ariaLabel: st
         );
       })}
     </ul>
+  );
+}
+
+export interface ColumnSeries {
+  name: string;
+  color: string;
+  values: number[];
+}
+
+/**
+ * Colunas agrupadas (uma por série em cada rótulo), na mesma linha de base — ex.: entradas × gastos
+ * por mês. Valores não negativos; o eixo usa `tickFormat` e o tooltip, `valueFormat`.
+ */
+export function ColumnChart({
+  labels,
+  fullLabels,
+  series,
+  ariaLabel,
+  height = 220,
+  tickFormat,
+  valueFormat,
+}: {
+  labels: string[];
+  fullLabels: string[];
+  series: ColumnSeries[];
+  ariaLabel: string;
+  height?: number;
+  tickFormat: (v: number) => string;
+  valueFormat: (v: number) => string;
+}) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const pad = { top: 12, right: 8, bottom: 26, left: 58 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const n = Math.max(1, labels.length);
+  const rawMax = Math.max(0, ...series.flatMap((s) => s.values));
+  const max = rawMax > 0 ? niceMax(rawMax) : 1;
+  const band = innerW / n;
+  const groupW = band * 0.72;
+  const colW = Math.max(2, Math.min(24, groupW / Math.max(1, series.length) - (series.length > 1 ? 2 : 0)));
+  const y = (v: number) => pad.top + innerH - (v / max) * innerH;
+  const labelEvery = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(innerW / 34))));
+  const ticks = [0, max / 2, max];
+
+  return (
+    <div className="chart-plot" ref={ref}>
+      <svg
+        className="chart-svg"
+        width={width}
+        height={height}
+        role="img"
+        aria-label={ariaLabel}
+        onPointerLeave={() => setHover(null)}
+        onPointerMove={(e) => {
+          const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
+          const i = Math.floor((e.clientX - rect.left - pad.left) / band);
+          setHover(i >= 0 && i < labels.length ? i : null);
+        }}
+      >
+        {ticks.map((t) => (
+          <g key={t}>
+            <line className={t === 0 ? 'axis' : 'grid'} x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} />
+            <text x={pad.left - 6} y={y(t)} textAnchor="end" dominantBaseline="central">
+              {tickFormat(t)}
+            </text>
+          </g>
+        ))}
+        {labels.map((label, i) => {
+          const groupX = pad.left + i * band + (band - (colW * series.length + (series.length - 1) * 2)) / 2;
+          return (
+            <g key={i} opacity={hover !== null && hover !== i ? 0.55 : 1}>
+              {series.map((s, k) => {
+                const v = s.values[i] ?? 0;
+                const x = groupX + k * (colW + 2);
+                return v > 0 ? <path key={s.name} d={columnPath(x, y(v), colW, y(0) - y(v))} fill={s.color} /> : null;
+              })}
+              {i % labelEvery === 0 && (
+                <text x={pad.left + i * band + band / 2} y={height - 8} textAnchor="middle">
+                  {label}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {hover !== null && labels[hover] !== undefined && (
+        <div className="chart-tooltip" style={{ left: pad.left + hover * band + band / 2, top: y(Math.max(0, ...series.map((s) => s.values[hover] ?? 0))) }}>
+          <strong>{fullLabels[hover]}</strong>
+          {series.map((s) => (
+            <span key={s.name} style={{ display: 'block' }}>
+              {s.name}: {valueFormat(s.values[hover] ?? 0)}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

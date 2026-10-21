@@ -37,6 +37,7 @@ export const router = createHashRouter([
       { path: 'metas/:id', element: <GoalDetailPage /> },
       { path: 'metas/:id/editar', element: <GoalFormPage /> },
       { path: 'agenda', element: <AgendaPage /> },
+      { path: 'dinheiro', lazy: async () => ({ Component: (await import('../features/money/MoneyPage')).MoneyPage }) },
       { path: 'relatorios', lazy: async () => ({ Component: (await import('../features/reports/ReportsPage')).ReportsPage }) },
       { path: 'diario', lazy: async () => ({ Component: (await import('../features/journal/JournalPage')).JournalPage }) },
       { path: 'kai', lazy: async () => ({ Component: (await import('../features/kai/KaiPage')).KaiPage }) },

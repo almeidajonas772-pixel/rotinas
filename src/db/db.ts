@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type {
   AgendaCompletion,
   AgendaItem,
+  Budget,
   Checkin,
   DayPlan,
   Goal,
@@ -12,6 +13,7 @@ import type {
   JournalEntry,
   KaiConversation,
   KaiInsight,
+  MoneyEntry,
   NightSession,
   NotificationLog,
   Preferences,
@@ -51,7 +53,14 @@ export const SCHEMA_V3 = {
   nightSessions: 'id, date, updatedAt',
 } as const;
 
-export const TABLE_NAMES = Object.keys(SCHEMA_V3) as Array<keyof typeof SCHEMA_V3>;
+/** v4: aba Dinheiro (gastos e entradas) e limites mensais por categoria. */
+export const SCHEMA_V4 = {
+  ...SCHEMA_V3,
+  moneyEntries: 'id, date, kind, category',
+  budgets: 'id',
+} as const;
+
+export const TABLE_NAMES = Object.keys(SCHEMA_V4) as Array<keyof typeof SCHEMA_V4>;
 
 export class RotinasDB extends Dexie {
   profile!: EntityTable<Profile, 'id'>;
@@ -71,6 +80,8 @@ export class RotinasDB extends Dexie {
   notificationLog!: EntityTable<NotificationLog, 'id'>;
   dayPlans!: EntityTable<DayPlan, 'date'>;
   nightSessions!: EntityTable<NightSession, 'id'>;
+  moneyEntries!: EntityTable<MoneyEntry, 'id'>;
+  budgets!: EntityTable<Budget, 'id'>;
 
   constructor(name: string = DB_NAME) {
     super(name);
@@ -101,10 +112,12 @@ export class RotinasDB extends Dexie {
             Object.assign(p, upgradePrefsToV3(p));
           });
       });
+    // Só tabelas novas: nada a converter.
+    this.version(4).stores(SCHEMA_V4);
   }
 }
 
-if (DB_SCHEMA_VERSION !== 3) {
+if (DB_SCHEMA_VERSION !== 4) {
   throw new Error('Atualize RotinasDB ao mudar DB_SCHEMA_VERSION.');
 }
 

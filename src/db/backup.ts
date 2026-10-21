@@ -6,6 +6,7 @@ import { currentSchedule, describeSchedule, describeTiming } from '../domain/sch
 import {
   agendaCompletionSchema,
   agendaItemSchema,
+  budgetSchema,
   checkinSchema,
   dayPlanSchema,
   goalProgressEntrySchema,
@@ -15,6 +16,7 @@ import {
   journalEntrySchema,
   kaiConversationSchema,
   kaiInsightSchema,
+  moneyEntrySchema,
   nightSessionSchema,
   preferencesSchema,
   profileSchema,
@@ -51,6 +53,8 @@ const TABLE_SCHEMAS = {
   kaiConversations: kaiConversationSchema,
   dayPlans: dayPlanSchema,
   nightSessions: nightSessionSchema,
+  moneyEntries: moneyEntrySchema,
+  budgets: budgetSchema,
 } as const;
 
 export type BackupTableName = keyof typeof TABLE_SCHEMAS;
@@ -83,6 +87,8 @@ export const TABLE_LABEL: Record<BackupTableName, string> = {
   kaiConversations: 'Conversas com o Kai',
   dayPlans: 'Prioridades do dia',
   nightSessions: 'Sessões da noite',
+  moneyEntries: 'Lançamentos de dinheiro',
+  budgets: 'Limites mensais de gastos',
 };
 
 export async function exportBackup(database: RotinasDB = db): Promise<BackupFile> {
@@ -320,6 +326,18 @@ export async function exportReadable(database: RotinasDB = db): Promise<string> 
       lines.push(`**${who}:** ${m.content}${m.question ? ` ${m.question}` : ''}`, '');
     }
   }
+
+  lines.push('## Dinheiro', '');
+  if (t.moneyEntries.length === 0) lines.push('Nenhum lançamento.', '');
+  else {
+    const brl = (cents: number) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    for (const e of [...t.moneyEntries].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))) {
+      lines.push(`- ${formatDate(e.date)}: ${e.kind === 'income' ? 'entrada' : 'gasto'} de ${brl(e.amountCents)} em ${e.category}${e.description ? ` (${e.description})` : ''}`);
+    }
+    lines.push('');
+  }
+  for (const b of t.budgets) lines.push(`- Limite mensal de ${b.category}: ${(b.monthlyLimitCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
+  if (t.budgets.length > 0) lines.push('');
 
   lines.push('## Kai', '');
   lines.push(`- Conversas guardadas: ${t.kaiConversations.length}`);

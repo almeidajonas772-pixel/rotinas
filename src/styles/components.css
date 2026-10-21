@@ -2692,3 +2692,88 @@ dialog.dialog::backdrop {
 .night-color-row .chip {
   gap: 6px;
 }
+
+/* ── Dinheiro ─────────────────────────────────────────────────────────────── */
+
+.meter.is-over > span {
+  background: var(--danger);
+}
+
+.money-period {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--s-3);
+}
+
+.money-period-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.money-period-nav strong {
+  min-width: 11ch;
+  text-align: center;
+}
+
+.money-insights {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.money-insights li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.money-insights svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.money-day {
+  margin: var(--s-3) 0 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.money-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.money-row:hover {
+  background: var(--surface-2);
+}
+
+.money-row + .money-row {
+  margin-top: 4px;
+}
+
+.money-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.money-amount.is-income {
+  color: var(--ok);
+}

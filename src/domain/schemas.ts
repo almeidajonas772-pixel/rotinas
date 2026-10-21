@@ -601,3 +601,43 @@ export function fieldErrors(error: z.ZodError): Record<string, string> {
   }
   return out;
 }
+
+// ── Dinheiro ────────────────────────────────────────────────────────────────
+
+export const moneyKindSchema = z.enum(['expense', 'income']);
+export type MoneyKind = z.infer<typeof moneyKindSchema>;
+
+export const paymentMethodSchema = z.enum(['pix', 'debito', 'credito', 'dinheiro', 'boleto', 'outro']);
+export type PaymentMethod = z.infer<typeof paymentMethodSchema>;
+
+/** Para gastos: a pessoa diz se era essencial, importante ou supérfluo (opcional). */
+export const necessitySchema = z.enum(['essencial', 'importante', 'superfluo']);
+export type Necessity = z.infer<typeof necessitySchema>;
+
+/** Um gasto ou uma entrada de dinheiro. Valores em centavos inteiros (nunca ponto flutuante). */
+export const moneyEntrySchema = z.object({
+  id: idSchema,
+  kind: moneyKindSchema,
+  amountCents: z
+    .number()
+    .int()
+    .min(1, { message: 'Informe um valor maior que zero' })
+    .max(10_000_000_000, { message: 'Valor alto demais' }),
+  date: civilDateSchema,
+  category: z.string().trim().min(1, { message: 'Escolha uma categoria' }).max(40, { message: 'Use no máximo 40 caracteres' }),
+  description: optionalText(120),
+  method: paymentMethodSchema.optional(),
+  necessity: necessitySchema.optional(),
+  createdAt: isoInstantSchema,
+  updatedAt: isoInstantSchema,
+});
+export type MoneyEntry = z.infer<typeof moneyEntrySchema>;
+
+/** Limite mensal de gastos de uma categoria (id = nome da categoria normalizado). */
+export const budgetSchema = z.object({
+  id: idSchema,
+  category: z.string().trim().min(1).max(40),
+  monthlyLimitCents: z.number().int().min(100, { message: 'Use um limite de pelo menos R$ 1,00' }).max(10_000_000_000),
+  updatedAt: isoInstantSchema,
+});
+export type Budget = z.infer<typeof budgetSchema>;

@@ -1,4 +1,4 @@
-import { CalendarClock, ChartColumn, ChevronRight, Compass, Moon, NotebookPen, PlugZap, Settings, ShieldCheck } from 'lucide-react';
+import { CalendarClock, ChartColumn, ChevronRight, Compass, Moon, NotebookPen, PlugZap, Settings, ShieldCheck, Wallet } from 'lucide-react';
 import { Link } from 'react-router';
 import { PageHeader } from '../../components/ui';
 import { isClaudeRuntime } from '../../platform/runtime';
@@ -6,6 +6,7 @@ import { isClaudeRuntime } from '../../platform/runtime';
 function links(claude: boolean) {
   return [
   { to: '/noite', label: 'Noite', description: claude ? 'Feche o dia e decida o amanhã com o Kai' : 'Feche o dia e decida o amanhã, por voz ou texto', icon: Moon },
+  { to: '/dinheiro', label: 'Dinheiro', description: 'Gastos, entradas, limites e relatórios', icon: Wallet },
   { to: '/diario', label: 'Diário', description: 'Reflexão diária privada', icon: NotebookPen },
   { to: '/relatorios', label: 'Relatórios', description: 'Gráficos dos seus registros', icon: ChartColumn },
   { to: '/kai', label: 'Kai', description: 'Assistente opcional de rotina', icon: Compass },

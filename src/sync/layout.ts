@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import {
   agendaCompletionSchema,
   agendaItemSchema,
+  budgetSchema,
   checkinSchema,
   dayPlanSchema,
   goalProgressEntrySchema,
@@ -11,6 +12,7 @@ import {
   journalEntrySchema,
   kaiConversationSchema,
   kaiInsightSchema,
+  moneyEntrySchema,
   nightSessionSchema,
   preferencesSchema,
   profileSchema,
@@ -45,6 +47,8 @@ export const SYNCED_TABLES = [
   'kaiConversations',
   'dayPlans',
   'nightSessions',
+  'moneyEntries',
+  'budgets',
 ] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
@@ -69,6 +73,8 @@ export const PRIMARY_KEY: Record<SyncedTable, string> = {
   kaiConversations: 'id',
   dayPlans: 'date',
   nightSessions: 'id',
+  moneyEntries: 'id',
+  budgets: 'id',
 };
 
 /** Esquema de validação aplicado a cada registro que chega do armazenamento antes de entrar no aparelho. */
@@ -87,6 +93,8 @@ export const SYNC_SCHEMAS: Record<SyncedTable, z.ZodType> = {
   kaiConversations: kaiConversationSchema,
   dayPlans: dayPlanSchema,
   nightSessions: nightSessionSchema,
+  moneyEntries: moneyEntrySchema,
+  budgets: budgetSchema,
 };
 
 function str(record: Record<string, unknown>, field: string): string | undefined {
@@ -105,7 +113,12 @@ export function defaultDocId(table: SyncedTable, key: string, record: Record<str
     case 'profile':
     case 'prefs':
     case 'habits':
+    case 'budgets':
       return `c~${table}`;
+    case 'moneyEntries': {
+      const m = month(r, 'date');
+      return m ? `c~moneyEntries~${m}` : hashed(8);
+    }
     case 'goals':
       return hashed(4);
     case 'agendaItems':

@@ -158,6 +158,7 @@ test('telas no Claude: um título, sem rolagem lateral e sem violações graves 
     ['#/noite', 'Noite'],
     ['#/kai', 'Kai'],
     ['#/calendario', 'Calendário externo'],
+    ['#/dinheiro', 'Dinheiro'],
     ['#/conexoes', 'Conectar Kai e Google'],
     ['#/configuracoes', 'Configurações'],
     ['#/configuracoes/privacidade', 'Privacidade'],
@@ -194,4 +195,58 @@ test('telas no Claude: um título, sem rolagem lateral e sem violações graves 
     expect(device.errors).toEqual([]);
     await device.context.close();
   }
+});
+
+test('Dinheiro: lançar gasto e entrada, ver o relatório, sincronizar e exportar a planilha', async ({ browser }, testInfo) => {
+  test.setTimeout(120_000);
+  const world = new World();
+  const device = await openDevice(browser, world);
+  const { page } = device;
+  await onboard(page, 'Leo', 'Ler 10 páginas');
+  await go(page, '#/dinheiro');
+  await expect(page.getByRole('heading', { name: 'Dinheiro', level: 1 })).toBeVisible();
+  await expect(page.getByText('Registre seu primeiro gasto')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Novo gasto' }).first().click();
+  let dialog = page.getByRole('dialog', { name: 'Novo gasto' });
+  await dialog.getByLabel('Valor (R$)').fill('45,90');
+  await dialog.getByRole('button', { name: 'Alimentação' }).click();
+  await dialog.getByRole('button', { name: 'Supérfluo' }).click();
+  await dialog.getByRole('button', { name: 'Salvar', exact: true }).click();
+  await expect(page.getByText('Gasto de R$ 45,90 registrado.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Nova entrada' }).first().click();
+  dialog = page.getByRole('dialog', { name: 'Nova entrada' });
+  await dialog.getByLabel('Valor (R$)').fill('500');
+  await dialog.getByRole('button', { name: 'Mesada' }).click();
+  await dialog.getByRole('button', { name: 'Salvar', exact: true }).click();
+
+  await expect(page.locator('.stat').filter({ hasText: 'Entradas' })).toContainText('R$ 500,00');
+  await expect(page.locator('.stat').filter({ hasText: 'Gastos' }).first()).toContainText('R$ 45,90');
+  await expect(page.getByText('Sobrou R$ 454,10 — 91% do que entrou.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Para onde vai o seu dinheiro' })).toBeVisible();
+
+  // Os lançamentos vão para a conta, num pacote do mês.
+  await expect(page.locator('.nav-footer')).toHaveText('Salvo na sua conta do Claude.', { timeout: 15_000 });
+  const ids = [...world.collection(`data/users/${USER_ID}`).keys()];
+  expect(ids.some((id) => id.startsWith('c~moneyEntries~'))).toBe(true);
+
+  // Relatório com dados: acessibilidade e captura para revisão visual.
+  const axeMonth = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
+  expect(axeMonth.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('dinheiro-mes.png'), fullPage: true });
+
+  // Visão do ano e planilha.
+  await page.getByRole('radio', { name: 'Ano', exact: true }).click();
+  await expect(page.getByText('Mês a mês').first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('dinheiro-ano.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Exportar planilha' }).click();
+  await expect(page.getByText(/Planilha exportada/)).toBeVisible();
+  const csv = world.saved.find((f) => f.filename.endsWith('.csv'));
+  expect(csv?.data).toContain('Alimentação');
+  expect(csv?.data).toContain('-45,90');
+
+  expect(device.external).toEqual([]);
+  expect(device.errors).toEqual([]);
+  await device.context.close();
 });

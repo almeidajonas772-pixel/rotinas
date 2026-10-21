@@ -365,7 +365,7 @@ describe('persistência, migração e backup', () => {
 
     const upgraded = new RotinasDB(name);
     await upgraded.open();
-    expect(upgraded.verno).toBe(3);
+    expect(upgraded.verno).toBe(4);
     const prefs = (await upgraded.prefs.get('prefs'))!;
     expect(prefs.notifications.channel).toBe('none');
     expect(prefs.consents.notifications.granted).toBe(false);

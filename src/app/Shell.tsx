@@ -11,6 +11,7 @@ import {
   Settings,
   Sun,
   Target,
+  Wallet,
   WifiOff,
 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
@@ -29,6 +30,7 @@ const NAV = [
   { to: '/habitos', label: 'Hábitos', icon: Repeat },
   { to: '/metas', label: 'Metas', icon: Target },
   { to: '/diario', label: 'Diário', icon: NotebookPen },
+  { to: '/dinheiro', label: 'Dinheiro', icon: Wallet },
   { to: '/relatorios', label: 'Relatórios', icon: ChartColumn },
 ];
 

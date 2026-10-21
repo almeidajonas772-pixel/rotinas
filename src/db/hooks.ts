@@ -3,6 +3,7 @@ import type { CivilDate } from '../domain/civil';
 import type {
   AgendaCompletion,
   AgendaItem,
+  Budget,
   Checkin,
   DayPlan,
   Goal,
@@ -13,6 +14,7 @@ import type {
   JournalEntry,
   KaiConversation,
   KaiInsight,
+  MoneyEntry,
   NightSession,
   Preferences,
   Profile,
@@ -113,4 +115,13 @@ export function useNightSession(date: CivilDate): NightSession | null | undefine
 
 export function useNightSessions(): NightSession[] | undefined {
   return useLiveQuery(() => db.nightSessions.orderBy('date').reverse().toArray(), []);
+}
+
+/** Todos os gastos e entradas, do mais antigo ao mais recente. */
+export function useMoneyEntries(): MoneyEntry[] | undefined {
+  return useLiveQuery(() => db.moneyEntries.orderBy('date').toArray(), []);
+}
+
+export function useBudgets(): Budget[] | undefined {
+  return useLiveQuery(() => db.budgets.toArray(), []);
 }

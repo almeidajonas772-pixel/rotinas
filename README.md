@@ -23,6 +23,7 @@ Decisões técnicas, modelo de dados e regras de cálculo: [docs/ARQUITETURA.md]
 - [Ativar o Kai](#ativar-o-kai)
 - [Conectar o Google Calendar](#conectar-o-google-calendar)
 - [A aba Noite](#a-aba-noite)
+- [A aba Dinheiro](#a-aba-dinheiro)
 - [Uso offline e instalação como app](#uso-offline-e-instalação-como-app)
 - [Backup e restauração](#backup-e-restauração)
 - [Variáveis de ambiente](#variáveis-de-ambiente)
@@ -202,6 +203,24 @@ Todas as noites, abra **Noite** (ou toque no convite que aparece em **Hoje** dep
   estudo nunca entram.
 - **Lembrete da noite** (opcional): notificação local no horário escolhido, com o app aberto.
 - A conversa fica só no aparelho (entra no backup e pode ser apagada em **Recomeçar**).
+
+## A aba Dinheiro
+
+Gastos e entradas (mesada, vendas, trabalho…) registrados em segundos: valor, categoria e, se quiser,
+descrição, forma de pagamento e se o gasto era essencial, importante ou supérfluo. A tela mostra:
+
+- **Entradas, gastos e saldo** do mês ou do ano, comparados com o período anterior; média por dia ou
+  por mês (contando desde o primeiro lançamento) e projeção do mês atual;
+- **Para onde vai o dinheiro:** ranking por categoria, com **limites mensais** opcionais (aviso aos 80%
+  e barra vermelha quando passa);
+- **O que chama atenção:** observações calculadas pelo app, sem IA — limite estourado, gasto maior
+  que as entradas, categoria que mais cresceu, supérfluos e o “efeito formiguinha” (muitos gastos
+  pequenos que somam muito);
+- **Gráficos por dia, mês a mês e ano a ano**, que crescem conforme você registra, sempre com tabela;
+- **Planilha** (CSV com “;” e vírgula decimal) que abre no Excel e no Google Planilhas.
+
+Valores são guardados em centavos inteiros. Os lançamentos entram no backup e, dentro do Claude, na
+sincronização entre aparelhos; **nunca vão ao Kai**.
 
 ## Uso offline e instalação como app
 
