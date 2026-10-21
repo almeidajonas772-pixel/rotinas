@@ -19,6 +19,7 @@ import { guessTimeZone, listTimeZones, zoneOffsetLabel } from '../../domain/tz';
 import { callKai } from '../../lib/api';
 import { goToToday, readFileAsText, requestPersistentStorage } from '../../lib/browser';
 import { requestNotificationPermission } from '../../lib/notifications';
+import { isClaudeRuntime } from '../../platform/runtime';
 import { draftFromTemplate, emptyHabitDraft, HABIT_TEMPLATES, validateHabitDraft } from '../habits/draft';
 import { HabitEditor } from '../habits/HabitEditor';
 import { ConsentDetails } from '../privacy/ConsentDialog';
@@ -33,6 +34,7 @@ interface KaiSuggestion {
 
 export function Onboarding({ existing }: { existing: Profile | null }) {
   const toast = useToast();
+  const claude = isClaudeRuntime();
   const [step, setStep] = useState(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -239,21 +241,31 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
               Sua rotina, do seu jeito.
             </h1>
             <p className="page-subtitle" style={{ fontSize: '1.125rem', maxWidth: '52ch' }}>
-              Organize hábitos, metas, agenda e reflexões em um só lugar. Sem conta e sem login: tudo fica salvo neste navegador.
+              {claude
+                ? 'Organize hábitos, metas, agenda e reflexões em um só lugar. Sem cadastro extra e sem custo: tudo fica salvo na sua conta do Claude.'
+                : 'Organize hábitos, metas, agenda e reflexões em um só lugar. Sem conta e sem login: tudo fica salvo neste navegador.'}
             </p>
             <ul className="welcome-points" role="list">
               <li>
                 <HardDrive size={20} aria-hidden="true" />
                 <div>
-                  <h2>Seus dados ficam aqui</h2>
-                  <p className="small muted">Tudo fica no armazenamento local deste navegador (IndexedDB) e funciona sem internet. Faça backups em Configurações.</p>
+                  <h2>{claude ? 'Seus dados ficam na sua conta' : 'Seus dados ficam aqui'}</h2>
+                  <p className="small muted">
+                    {claude
+                      ? 'Numa área privada da sua conta do Claude neste app — os mesmos no iPad e no computador. Faça backups em Configurações quando quiser.'
+                      : 'Tudo fica no armazenamento local deste navegador (IndexedDB) e funciona sem internet. Faça backups em Configurações.'}
+                  </p>
                 </div>
               </li>
               <li>
                 <ShieldCheck size={20} aria-hidden="true" />
                 <div>
-                  <h2>Você decide o que sai do aparelho</h2>
-                  <p className="small muted">O assistente Kai e o Google Calendar são opcionais e só funcionam depois de autorizações específicas, uma para cada tipo de dado.</p>
+                  <h2>{claude ? 'Você decide o que vai ao Kai e ao Google' : 'Você decide o que sai do aparelho'}</h2>
+                  <p className="small muted">
+                    {claude
+                      ? 'O Kai (pelo seu plano do Claude) e o Google Agenda (pelo conector do Claude) são opcionais e só funcionam depois de autorizações específicas, uma para cada tipo de dado.'
+                      : 'O assistente Kai e o Google Calendar são opcionais e só funcionam depois de autorizações específicas, uma para cada tipo de dado.'}
+                  </p>
                 </div>
               </li>
               <li>
@@ -280,9 +292,9 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
           <div className="stack-lg">
             <div>
               <h1 className="page-title" tabIndex={-1} ref={headingRef}>
-                Perfil local
+                {claude ? 'Perfil' : 'Perfil local'}
               </h1>
-              <p className="page-subtitle">Fica só neste aparelho. Nenhum cadastro é criado.</p>
+              <p className="page-subtitle">{claude ? 'Fica na sua conta do Claude, só para você. Nenhum cadastro extra é criado.' : 'Fica só neste aparelho. Nenhum cadastro é criado.'}</p>
             </div>
             <div className="panel">
               <TextField label="Como quer ser chamado?" optional value={name} onChange={setName} maxLength={60} autoComplete="given-name" hint="Usado só para saudações no app. Nunca é enviado ao Kai." />
@@ -364,8 +376,24 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
               <h1 className="page-title" tabIndex={-1} ref={headingRef}>
                 Lembretes
               </h1>
-              <p className="page-subtitle">Lembretes são notificações deste aparelho, sem envio de dados. Você liga por hábito.</p>
+              <p className="page-subtitle">
+                {claude ? 'Dentro do Claude, os lembretes vêm do Google Agenda — que avisa no celular, no iPad e no computador.' : 'Lembretes são notificações deste aparelho, sem envio de dados. Você liga por hábito.'}
+              </p>
             </div>
+            {claude ? (
+              <div className="panel stack small">
+                <p>O Claude não deixa apps dentro dele mostrarem notificações. Por isso, sem custo nenhum, o Rotinas usa o seu Google Agenda:</p>
+                <ul>
+                  <li>
+                    <strong>Lembrete da noite:</strong> em Noite → Ajustes, o app cria um evento diário com notificação na hora.
+                  </li>
+                  <li>
+                    <strong>Hábitos:</strong> em Calendário externo, o app planeja horários livres e cria os blocos no Google, com os lembretes da sua agenda.
+                  </li>
+                </ul>
+                <p className="muted">Você configura isso depois da configuração inicial. Nada é criado sem a sua confirmação.</p>
+              </div>
+            ) : (
             <div className="panel">
               <SwitchRow
                 label="Quero receber lembretes"
@@ -381,6 +409,7 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
                 Nenhum lembrete é mostrado nesse intervalo. Dias permitidos e limite diário ficam em Configurações.
               </p>
             </div>
+            )}
           </div>
         )}
 
@@ -395,7 +424,11 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
             <div className="panel">
               <SwitchRow
                 label="Check-in diário de humor e energia"
-                description="Duas escalas de 1 a 5 e uma nota, quando você quiser. Serve para você notar padrões ao longo do tempo; não é avaliação de saúde. Fica só neste aparelho."
+                description={
+                  claude
+                    ? 'Duas escalas de 1 a 5 e uma nota, quando você quiser. Serve para você notar padrões ao longo do tempo; não é avaliação de saúde. Só vai ao Kai com autorização própria.'
+                    : 'Duas escalas de 1 a 5 e uma nota, quando você quiser. Serve para você notar padrões ao longo do tempo; não é avaliação de saúde. Fica só neste aparelho.'
+                }
                 checked={checkins}
                 onChange={(v) => {
                   setCheckins(v);
@@ -404,7 +437,7 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
               />
             </div>
             <div className="panel">
-              <SwitchRow label="Coaching por IA (Kai)" description="Envia dados mínimos ao provedor de IA somente quando você pede algo ao Kai." checked={kai} onChange={(v) => {
+              <SwitchRow label="Coaching por IA (Kai)" description={claude ? 'Usa o Claude da sua conta, sem custo extra. Envia dados mínimos somente quando você pede algo ao Kai.' : 'Envia dados mínimos ao provedor de IA somente quando você pede algo ao Kai.'} checked={kai} onChange={(v) => {
                 setKai(v);
                 if (!v) {
                   setKaiCheckins(false);
@@ -426,15 +459,25 @@ export function Onboarding({ existing }: { existing: Profile | null }) {
                   />
                   <SwitchRow label="Permitir que o Kai leia trechos do Diário" description="Autorização separada. Você ainda pode marcar entradas específicas como privadas." checked={kaiJournal} onChange={setKaiJournal} />
                   <Notice tone="info">
-                    O Kai precisa da camada privada (servidor do Rotinas) configurada com uma chave da Anthropic. Sem ela, o app avisa que o Kai está indisponível — e todo o resto continua funcionando.
+                    {claude
+                      ? 'O Kai funciona com o seu plano do Claude. Na primeira vez, o Claude pergunta se o Rotinas pode usá-lo — escolha “Permitir”.'
+                      : 'O Kai precisa da camada privada (servidor do Rotinas) configurada com uma chave da Anthropic. Sem ela, o app avisa que o Kai está indisponível — e todo o resto continua funcionando.'}
                   </Notice>
                 </div>
               )}
             </div>
             <div className="panel">
-              <p className="switch-label">Google Calendar</p>
+              <p className="switch-label">{claude ? 'Google Agenda' : 'Google Calendar'}</p>
               <p className="meta" style={{ marginTop: 4 }}>
-                Conexão opcional, feita depois em <strong>Calendário externo</strong>. Antes de conectar, o app mostra os dados acessados e pede os menores escopos possíveis. A agenda do Rotinas funciona sem ele.
+                {claude ? (
+                  <>
+                    Opcional, feito depois em <strong>Calendário externo</strong>: o Rotinas usa o conector do Google Calendar do seu Claude (sem Google Cloud e sem custo). A agenda do Rotinas funciona sem ele.
+                  </>
+                ) : (
+                  <>
+                    Conexão opcional, feita depois em <strong>Calendário externo</strong>. Antes de conectar, o app mostra os dados acessados e pede os menores escopos possíveis. A agenda do Rotinas funciona sem ele.
+                  </>
+                )}
               </p>
             </div>
           </div>

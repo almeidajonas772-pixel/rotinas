@@ -1,4 +1,5 @@
 import type { Consent, ConsentKey, Preferences, Profile } from '../domain/schemas';
+import { isClaudeRuntime } from '../platform/runtime';
 
 /**
  * Versão do texto de cada autorização. Mudou o texto de uma autorização? Incremente a dela:
@@ -19,20 +20,47 @@ export const CONSENT_VERSIONS: Record<ConsentKey, number> = {
   notifications: 1,
 };
 
+/**
+ * Versões dos textos do Rotinas dentro do Claude (features/privacy/consent-texts.ts,
+ * CLAUDE_CONSENT_TEXTS). Começam em 101: o caminho dos dados é outro (sem servidor próprio), então
+ * uma autorização dada para o texto do site não vale dentro do Claude, nem o contrário.
+ *
+ * Histórico: 101 — textos iniciais do Rotinas no Claude.
+ */
+export const CLAUDE_CONSENT_VERSIONS: Record<ConsentKey, number> = {
+  kai: 101,
+  kaiCheckins: 101,
+  kaiJournal: 101,
+  kaiAgenda: 101,
+  calendar: 101,
+  voice: 101,
+  notifications: 101,
+};
+
+const CLAUDE_VERSION_BASE = 100;
+
 /** Mantido por compatibilidade com backups antigos: versão mínima de qualquer texto. */
 export const CONSENT_TEXT_VERSION = 1;
 
+/** A versão atual do texto desta autorização no ambiente em que o app está rodando. */
+export function consentVersion(key: ConsentKey): number {
+  return isClaudeRuntime() ? CLAUDE_CONSENT_VERSIONS[key] : CONSENT_VERSIONS[key];
+}
+
 export function deniedConsent(key: ConsentKey): Consent {
-  return { granted: false, version: CONSENT_VERSIONS[key] };
+  return { granted: false, version: consentVersion(key) };
 }
 
 export function decidedConsent(key: ConsentKey, granted: boolean, at: string): Consent {
-  return { granted, updatedAt: at, version: CONSENT_VERSIONS[key] };
+  return { granted, updatedAt: at, version: consentVersion(key) };
 }
 
-/** A autorização vale agora: foi concedida para o texto atual. */
+/** A autorização vale agora: foi concedida para o texto atual deste ambiente. */
 export function consentActive(consent: Consent | undefined, key: ConsentKey): boolean {
-  return Boolean(consent?.granted) && (consent?.version ?? 0) >= CONSENT_VERSIONS[key];
+  if (!consent?.granted) return false;
+  const version = consent.version ?? 0;
+  if (isClaudeRuntime()) return version >= CLAUDE_CONSENT_VERSIONS[key];
+  return version >= CONSENT_VERSIONS[key] && version < CLAUDE_VERSION_BASE;
 }
 
 /**

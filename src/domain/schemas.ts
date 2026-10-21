@@ -114,6 +114,13 @@ export const preferencesSchema = z.object({
     rate: z.number().min(0.7).max(1.4),
     /** Depois que o Kai fala, o microfone volta a ouvir sozinho (onde o navegador permite). */
     handsFree: z.boolean(),
+    /**
+     * Lembrete diário criado no Google Agenda pelo Rotinas dentro do Claude (onde o app não pode
+     * notificar). Guardado só para mostrar que já existe e evitar criar outro.
+     */
+    googleReminder: z
+      .object({ eventId: optionalText(300), time: localTimeSchema, createdAt: isoInstantSchema })
+      .optional(),
     /** Cores de evento do Google (colorId 1–11) que a pessoa usa para provas e para prazos. */
     flagColors: z
       .object({

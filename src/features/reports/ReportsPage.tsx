@@ -60,7 +60,7 @@ export function ReportsPage() {
 
   return (
     <div className="page page-wide">
-      <PageHeader title="Relatórios" subtitle="Tudo aqui é calculado a partir dos seus registros neste aparelho." />
+      <PageHeader title="Relatórios" subtitle="Tudo aqui é calculado pelo app a partir dos seus registros." />
       <div className="agenda-toolbar">
         <Segmented
           label="Período"

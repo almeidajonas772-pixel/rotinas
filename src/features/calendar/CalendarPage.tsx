@@ -1,7 +1,7 @@
-import { CalendarCheck, Eye, Link2, RotateCcw, Search, Unlink } from 'lucide-react';
+import { CalendarCheck, Eye, Link2, RotateCcw, Search, ShieldCheck, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { APP_CALENDAR_NAME, GOOGLE_EVENT_COLORS, GOOGLE_SCOPES, type CalendarAccess, type CalendarBlock, type CalendarCommitResult } from '../../../shared/calendar';
+import { APP_CALENDAR_NAME, GOOGLE_EVENT_COLORS, GOOGLE_SCOPES, type CalendarAccess, type CalendarBlock, type CalendarCommitResult, type CalendarStatus } from '../../../shared/calendar';
 import { useApp } from '../../app/context';
 import { ConfirmDialog, Dialog } from '../../components/dialog';
 import { CheckField, SelectField, TextField } from '../../components/form';
@@ -20,6 +20,8 @@ import { isScheduledOn } from '../../domain/schedule';
 import { conflictsFor, proposeSlots, type BusyInterval, type SlotProposal } from '../../domain/slots';
 import { wallTimeToInstant } from '../../domain/tz';
 import { calendarCommit, calendarDisconnect, calendarFreeBusy, calendarPreview } from '../../lib/api';
+import { GOOGLE_CALENDAR_CONNECTOR, openPermissionsPanel, requestPermissions } from '../../platform/claude';
+import { isClaudeRuntime } from '../../platform/runtime';
 import { ConsentDetails, ConsentDialog } from '../privacy/ConsentDialog';
 import { clearGoogleEventsCache, useCalendarStatus, useConnectLinks, useGoogleEvents } from './calendar-client';
 
@@ -62,14 +64,16 @@ export function CalendarPage() {
   const [planning, setPlanning] = useState(false);
   const [planNote, setPlanNote] = useState<string>();
   const [alsoGoogle, setAlsoGoogle] = useState(false);
-  const [googlePreview, setGooglePreview] = useState<{ previewToken: string; blocks: CalendarBlock[]; conflicts: Array<Array<{ start: string; end: string }>> } | null>(null);
+  const [googlePreview, setGooglePreview] = useState<{ previewToken: string; blocks: CalendarBlock[]; conflicts: Array<Array<{ start: string; end: string }>>; target?: string } | null>(null);
+  const claude = isClaudeRuntime();
   const [committing, setCommitting] = useState(false);
 
   const google = status.state === 'ok' ? status.status : undefined;
   const canRead = Boolean(google?.connected && google.canReadAvailability);
   const canWrite = Boolean(google?.connected && google.canWrite);
   const canReadEvents = Boolean(google?.connected && google.canReadEvents);
-  const levels: CalendarAccess[] = !google?.configured
+  // Dentro do Claude não há links de autorização: o acesso é o do conector do Claude.
+  const levels: CalendarAccess[] = claude || !google?.configured
     ? []
     : !google.connected
       ? ['availability', 'events']
@@ -197,7 +201,7 @@ export function CalendarPage() {
         return;
       }
       // O comprovante vale para estes blocos exatos (o servidor confere na confirmação).
-      setGooglePreview({ previewToken: res.data.previewToken, blocks, conflicts: res.data.blocks.map((b) => b.conflicts) });
+      setGooglePreview({ previewToken: res.data.previewToken, blocks, conflicts: res.data.blocks.map((b) => b.conflicts), target: res.data.target });
     } catch (e) {
       toast.show(e instanceof Error ? e.message : 'Falha ao preparar a prévia.', { tone: 'danger' });
     }
@@ -228,14 +232,19 @@ export function CalendarPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Calendário externo" subtitle="Conexão opcional. A agenda do Rotinas continua sendo a fonte de verdade dos itens criados nela." />
+      <PageHeader
+        title="Calendário externo"
+        subtitle={claude ? 'Google Agenda pelo conector do seu Claude (opcional e sem custo). A agenda do Rotinas continua sendo a fonte de verdade dos itens criados nela.' : 'Conexão opcional. A agenda do Rotinas continua sendo a fonte de verdade dos itens criados nela.'}
+      />
 
       <Section title="Google Calendar" id="cal-google">
         {status.state === 'off' && (
           <div className="panel stack">
             {prefs.consents.calendar.outdated ? (
               <Notice tone="info" title="A autorização mudou">
-                Agora ela também cobre a leitura opcional de eventos (título, horário e cor). Revise o texto abaixo para voltar a usar o Google Calendar.
+                {claude
+                  ? 'Dentro do Claude, o Google é acessado pelo conector do seu Claude, e o texto da autorização é outro. Revise abaixo para usar o Google Agenda.'
+                  : 'Agora ela também cobre a leitura opcional de eventos (título, horário e cor). Revise o texto abaixo para voltar a usar o Google Calendar.'}
               </Notice>
             ) : (
               <p className="small muted">Desativado: nenhuma chamada é feita. Antes de autorizar, veja o que seria acessado.</p>
@@ -249,7 +258,8 @@ export function CalendarPage() {
           </div>
         )}
         {status.state === 'offline' && <Notice tone="warn">Sem conexão. O planejador abaixo continua funcionando com a agenda do Rotinas.</Notice>}
-        {status.state === 'loading' && <LoadingState label="Consultando a camada privada…" lines={1} />}
+        {status.state === 'loading' && <LoadingState label={claude ? 'Consultando o conector do Claude…' : 'Consultando a camada privada…'} lines={1} />}
+        {claude && google && <ClaudeCalendarPanel google={google} onRefresh={refresh} onStop={() => setConfirmDisconnect(true)} />}
         {status.state === 'error' && (
           <Notice
             tone="warn"
@@ -269,7 +279,7 @@ export function CalendarPage() {
             <p style={{ marginTop: 6 }}>O assistente “Conectar Kai e Google” mostra o passo exato que falta.</p>
           </Notice>
         )}
-        {google && !google.configured && (
+        {!claude && google && !google.configured && (
           <Notice
             tone="warn"
             title="Google Calendar não configurado no servidor"
@@ -288,7 +298,7 @@ export function CalendarPage() {
             <p style={{ marginTop: 6 }}>Nada é simulado enquanto isso: o planejador abaixo usa só a agenda do Rotinas.</p>
           </Notice>
         )}
-        {google && google.configured && !google.connected && (
+        {!claude && google && google.configured && !google.connected && (
           <div className="panel stack">
             <p className="switch-label">Não conectado</p>
             <p className="small">Escolha o nível de acesso. A autorização abre numa aba (ou janela) do Google; ao terminar, volte para cá — a tela atualiza sozinha.</p>
@@ -311,7 +321,7 @@ export function CalendarPage() {
             {linkError && <p className="field-error">{linkError}</p>}
           </div>
         )}
-        {google && google.connected && (
+        {!claude && google && google.connected && (
           <div className="panel stack">
             <div className="row">
               <span className="status-dot is-on" aria-hidden="true" />
@@ -379,7 +389,7 @@ export function CalendarPage() {
                     ))}
                 </ul>
               ))}
-            <p className="meta">Lidos agora da sua conta; não ficam guardados no servidor nem no backup.</p>
+            <p className="meta">{claude ? 'Lidos agora pelo conector do seu Claude; não ficam guardados (nem no backup). Blocos criados pelo Rotinas não aparecem aqui: eles já estão na sua agenda do app.' : 'Lidos agora da sua conta; não ficam guardados no servidor nem no backup.'}</p>
           </div>
         )}
       </Section>
@@ -455,8 +465,16 @@ export function CalendarPage() {
                   </table>
                 </div>
                 <CheckField
-                  label={`Também criar no Google Calendar (agenda “${APP_CALENDAR_NAME}”)`}
-                  description={canWrite ? 'Você verá a confirmação final do Google antes de qualquer escrita.' : 'Requer conexão com permissão de criar blocos.'}
+                  label={claude ? 'Também criar no Google Agenda' : `Também criar no Google Calendar (agenda “${APP_CALENDAR_NAME}”)`}
+                  description={
+                    !canWrite
+                      ? claude
+                        ? 'Requer o Google Agenda conectado ao seu Claude (veja acima).'
+                        : 'Requer conexão com permissão de criar blocos.'
+                      : claude
+                        ? 'Antes de criar, você confere a lista final. Os blocos chegam com os lembretes padrão da sua agenda — é assim que você é lembrado dentro do Claude.'
+                        : 'Você verá a confirmação final do Google antes de qualquer escrita.'
+                  }
                   checked={alsoGoogle && canWrite}
                   disabled={!canWrite}
                   onChange={setAlsoGoogle}
@@ -488,8 +506,12 @@ export function CalendarPage() {
       <Dialog
         open={googlePreview !== null}
         onClose={() => setGooglePreview(null)}
-        title="Confirmar criação no Google Calendar"
-        description={`Estes eventos serão criados na agenda “${APP_CALENDAR_NAME}” da sua conta Google. Conflitos foram verificados agora pelo servidor.`}
+        title={claude ? 'Confirmar criação no Google Agenda' : 'Confirmar criação no Google Calendar'}
+        description={
+          claude
+            ? `Estes eventos serão criados na ${googlePreview?.target ?? 'sua agenda do Google'}. Os conflitos foram conferidos agora na sua agenda principal.`
+            : `Estes eventos serão criados na agenda “${APP_CALENDAR_NAME}” da sua conta Google. Conflitos foram verificados agora pelo servidor.`
+        }
         footer={
           <>
             <Button onClick={() => setGooglePreview(null)}>Cancelar</Button>
@@ -515,7 +537,32 @@ export function CalendarPage() {
       </Dialog>
 
       <ConfirmDialog
-        open={confirmDisconnect}
+        open={confirmDisconnect && claude}
+        onClose={() => setConfirmDisconnect(false)}
+        title="Parar de usar o Google Agenda?"
+        confirmLabel="Parar de usar"
+        danger
+        message={
+          <p className="small">
+            O Rotinas deixa de usar o conector agora (nada mais é lido nem criado). Blocos já criados continuam na sua agenda do Rotinas e no Google. Para tirar o acesso do próprio Claude ao Google, desconecte em
+            Configurações → Conectores, no Claude.
+          </p>
+        }
+        onConfirm={async () => {
+          try {
+            await setConsent('calendar', false);
+            await clearIntegration();
+            clearGoogleEventsCache();
+            toast.show('O Rotinas parou de usar o Google Agenda.');
+          } catch (e) {
+            toast.show(describeError(e), { tone: 'danger' });
+          }
+          setConfirmDisconnect(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmDisconnect && !claude}
         onClose={() => setConfirmDisconnect(false)}
         title="Desconectar o Google Calendar?"
         confirmLabel="Desconectar e revogar"
@@ -535,6 +582,91 @@ export function CalendarPage() {
           refresh();
         }}
       />
+    </div>
+  );
+}
+
+/** O Google Agenda pelo conector do Claude: estado, permissão e o passo que falta. */
+function ClaudeCalendarPanel({ google, onRefresh, onStop }: { google: CalendarStatus; onRefresh: () => void; onStop: () => void }) {
+  const toast = useToast();
+  if (!google.configured) {
+    return (
+      <Notice tone="warn" title="Abra o Rotinas dentro do Claude">
+        {google.reason}
+      </Notice>
+    );
+  }
+  if (!google.connected) {
+    return (
+      <div className="panel stack">
+        <p className="switch-label">Conecte o Google Calendar ao seu Claude</p>
+        <ol className="small">
+          <li>
+            No Claude, abra <strong>Configurações</strong> → <strong>Conectores</strong>.
+          </li>
+          <li>
+            Em <strong>Google Calendar</strong>, toque em <strong>Conectar</strong> e entre na sua conta Google (é gratuito).
+          </li>
+          <li>Volte para cá: a tela atualiza sozinha (ou toque em “Verificar de novo”).</li>
+        </ol>
+        {google.reason && <p className="meta">{google.reason}</p>}
+        <div>
+          <Button icon={<RotateCcw size={18} aria-hidden="true" />} onClick={onRefresh}>
+            Verificar de novo
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  const denied = google.permission === 'denied';
+  return (
+    <div className="panel stack">
+      <div className="row">
+        <span className={`status-dot ${denied ? 'is-off' : 'is-on'}`} aria-hidden="true" />
+        <p className="switch-label">{denied ? 'Conector sem permissão para o Rotinas' : 'Conector do Google Calendar encontrado no seu Claude'}</p>
+      </div>
+      <ul className="small">
+        <li>Ler eventos da agenda principal (título, horário e cor): {google.canReadEvents ? 'disponível' : 'indisponível'}</li>
+        <li>Criar blocos confirmados e o lembrete da noite: {google.canWrite ? 'disponível' : 'indisponível'}</li>
+        <li>
+          Permissão deste app:{' '}
+          {google.permission === 'granted' ? 'concedida' : denied ? 'recusada (libere em Permissões)' : 'o Claude vai perguntar na primeira leitura — escolha “Permitir”'}
+        </li>
+      </ul>
+      <div className="btn-row">
+        {denied ? (
+          <Button
+            icon={<ShieldCheck size={18} aria-hidden="true" />}
+            onClick={async () => {
+              const opened = await openPermissionsPanel();
+              if (!opened) toast.show('Abra o menu do artifact no Claude e escolha “Permissões”.', { tone: 'danger' });
+              onRefresh();
+            }}
+          >
+            Abrir permissões
+          </Button>
+        ) : (
+          google.permission !== 'granted' && (
+            <Button
+              variant="primary"
+              icon={<ShieldCheck size={18} aria-hidden="true" />}
+              onClick={async () => {
+                const result = await requestPermissions([`mcp:${GOOGLE_CALENDAR_CONNECTOR}`]);
+                if (result[`mcp:${GOOGLE_CALENDAR_CONNECTOR}`] === 'denied') toast.show('Permissão não concedida. Você pode liberar depois em Permissões, no menu do artifact.', { tone: 'danger' });
+                onRefresh();
+              }}
+            >
+              Permitir acesso ao Google Agenda
+            </Button>
+          )
+        )}
+        <Button variant="ghost" icon={<Unlink size={18} aria-hidden="true" />} onClick={onStop}>
+          Parar de usar o Google
+        </Button>
+      </div>
+      <p className="meta">
+        Dica: se você criar no Google Agenda uma agenda chamada “Rotinas”, os blocos irão para ela (fica fácil esconder ou apagar todos de uma vez). Sem ela, vão para a agenda principal, em amarelo.
+      </p>
     </div>
   );
 }

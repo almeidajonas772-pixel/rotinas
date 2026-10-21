@@ -227,3 +227,40 @@ Testar o Kai e o Google de verdade depende de credenciais suas (ver README, seç
   aceita e o endereço de retorno do Google.
 - Limites: o limite por minuto do Kai vale por instância; o teto diário fica no Blob (falha aberta se o
   armazenamento não responder — o limite de gasto do Console é o teto definitivo).
+
+## 11. Rotinas dentro do Claude (sem custo extra)
+
+Motivo: a única parte paga era o Kai pela API da Anthropic (e, para o Google, um projeto próprio no
+Google Cloud). Dentro do Claude, o app usa as capacidades da plataforma de artifacts (contrato 0.2.87):
+
+- **Ambiente** (`src/platform/runtime.ts`): `vite build --mode claude` define `VITE_ROTINAS_RUNTIME`;
+  o mesmo código decide entre `web` e `claude`. `scripts/build-claude.mjs` monta uma página só com
+  JS, CSS e fontes embutidos (o artifact recebe apenas o conteúdo; a plataforma acrescenta o esqueleto).
+- **Kai** (`src/platform/kai-claude.ts`): capacidade `sample`, sem system prompt controlado pela página.
+  As regras do Kai vão no início da mensagem, os dados do app entram como JSON escapado dentro de tags
+  (marcados como dados) e o formato pedido é o JSON Schema de saída. A resposta passa pelos mesmos
+  `fitToSchema`, validação Zod e `postprocess` da camada privada (`shared/kai-core.ts`). `cache: false`
+  (é uma conversa), níveis `quick`/`default`, limite de 10 pedidos/minuto e erros da plataforma
+  traduzidos (`describeSampleFailure`).
+- **Google** (`src/platform/calendar-claude.ts`): capacidade `mcp`, conector `Google Calendar`.
+  Leituras com `cache: false`; de cada evento ficam só título, horários, dia inteiro, ocupado e cor.
+  Eventos criados pelo app levam a marca “Criado pelo app Rotinas” na descrição e são excluídos das
+  leituras (já estão na agenda do app). Escrita só com prévia em memória (10 min, mesmos blocos) e
+  confirmação; destino: agenda “Rotinas” se existir (`list_calendars`), senão a principal, em amarelo.
+  Escritas nunca levam `AbortSignal` (o resultado ficaria incerto). Lembrete da noite: evento diário
+  (`RRULE:FREQ=DAILY`), livre, com notificação popup na hora.
+- **Dados** (`src/platform/cloud-sync.ts`, `src/sync/`): capacidade `db`, coleção privada
+  `data/users/<id>` (id de `user.id()`). Cópia local no IndexedDB (ou em memória, se o navegador
+  bloquear); registros agrupados em pacotes por tabela e período (`layout.ts`), cada um com data de
+  modificação; o mais recente vence, exclusões viram marcas (180 dias), pacotes grandes são divididos
+  e um registro maior que o limite fica só no aparelho (avisado na tela). Uma “sombra” local guarda o
+  que já foi sincronizado para detectar mudanças sem reenviar tudo. O documento `meta` traz a versão do
+  esquema (versão mais nova bloqueia a escrita) e a marca de “Apagar tudo”, que os outros aparelhos
+  aplicam ao abrir. Preferências só do aparelho (senha do servidor, voz escolhida) não sobem.
+- **Autorizações**: textos próprios do modo Claude (`CLAUDE_CONSENT_TEXTS`) com versões a partir de
+  101, então uma autorização dada no site não vale dentro do Claude, nem o contrário.
+- **Limites da plataforma**: sem service worker, notificações e microfone; downloads passam pela
+  confirmação do Claude; o tema “do sistema” segue o tema do Claude.
+- **Testes**: `tests/unit/{kai-claude,calendar-claude,sync-engine}.test.ts` e `e2e-claude/`, que
+  carrega a página publicada dentro do esqueleto do artifact com um `window.claude` simulado (dois
+  contextos do navegador como dois aparelhos, compartilhando o mesmo armazenamento).

@@ -15,6 +15,7 @@ import { formatInstant, formatLongDate } from '../../domain/format';
 import { goalIsCurrent } from '../../domain/goals';
 import { isScheduledOn } from '../../domain/schedule';
 import type { JournalEntry } from '../../domain/schemas';
+import { isClaudeRuntime } from '../../platform/runtime';
 
 const PROMPTS: Array<{ key: 'didToday' | 'whatWorked' | 'toImprove' | 'nextStep'; label: string }> = [
   { key: 'didToday', label: 'O que eu fiz hoje?' },
@@ -254,7 +255,7 @@ function JournalEditor({ date, entry }: { date: CivilDate; entry: JournalEntry |
         {kaiConsent ? (
           <SwitchRow
             label="Permitir que o Kai leia esta entrada"
-            description="Você autorizou o Kai a ler trechos do Diário. Desligue aqui para manter esta entrada só no aparelho."
+            description={isClaudeRuntime() ? 'Você autorizou o Kai a ler trechos do Diário. Desligue aqui para que esta entrada nunca vá ao Kai.' : 'Você autorizou o Kai a ler trechos do Diário. Desligue aqui para manter esta entrada só no aparelho.'}
             checked={kaiAccess === 'allowed'}
             onChange={(v) => setKaiAccess(v ? 'allowed' : 'blocked')}
           />
@@ -301,7 +302,7 @@ function JournalEditor({ date, entry }: { date: CivilDate; entry: JournalEntry |
         title="Excluir entrada do Diário?"
         danger
         confirmLabel="Excluir"
-        message={<p className="small">A entrada de {formatLongDate(date, true)} será apagada deste aparelho. Não dá para desfazer (a menos que você tenha um backup).</p>}
+        message={<p className="small">A entrada de {formatLongDate(date, true)} será apagada{isClaudeRuntime() ? ' (em todos os seus aparelhos)' : ' deste aparelho'}. Não dá para desfazer (a menos que você tenha um backup).</p>}
         onConfirm={async () => {
           if (!entry) return;
           try {

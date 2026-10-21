@@ -78,8 +78,8 @@ export function NightBriefCards({
                     {h.habit.title}
                     {h.habit.firstStep && <span className="meta"> · {h.habit.firstStep}</span>}
                   </span>
-                  <Button size="sm" icon={<Check size={16} aria-hidden="true" />} onClick={() => onCompleteHabit(h.habit.id)} aria-label={`Concluir ${h.habit.title}`}>
-                    Feito
+                  <Button size="sm" icon={<Check size={16} aria-hidden="true" />} onClick={() => onCompleteHabit(h.habit.id)}>
+                    Feito<span className="visually-hidden">: concluir {h.habit.title}</span>
                   </Button>
                 </li>
               ))}

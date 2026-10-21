@@ -4,6 +4,7 @@ import { logNotification, notificationsSentOn, pruneNotificationLog } from '../d
 import { addDays, todayInZone } from '../domain/civil';
 import { dueNightReminder, dueReminders } from '../domain/notifications-plan';
 import type { Preferences, Profile } from '../domain/schemas';
+import { isClaudeRuntime } from '../platform/runtime';
 
 /**
  * Lembretes locais: o navegador mostra a notificação, sem servidor de push. Por isso eles só
@@ -13,6 +14,8 @@ import type { Preferences, Profile } from '../domain/schemas';
 export type PermissionState = 'granted' | 'denied' | 'default' | 'unsupported';
 
 export function notificationPermission(): PermissionState {
+  // Dentro do Claude, a página roda num quadro isolado que não pode pedir notificações do sistema.
+  if (isClaudeRuntime()) return 'unsupported';
   if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
   return Notification.permission as PermissionState;
 }

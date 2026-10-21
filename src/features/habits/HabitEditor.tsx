@@ -4,6 +4,7 @@ import type { HabitDraft } from '../../db/repo-habits';
 import type { CivilDate } from '../../domain/civil';
 import type { Goal } from '../../domain/schemas';
 import { HORIZON_LABEL } from '../../domain/goals';
+import { isClaudeRuntime } from '../../platform/runtime';
 
 /** Campos do hábito, usados no onboarding, na criação e na edição. */
 export function HabitEditor({
@@ -185,7 +186,11 @@ export function HabitEditor({
       <div>
         <SwitchRow
           label="Lembrete"
-          description="Notificação local deste aparelho, só se as notificações estiverem ativadas em Configurações."
+          description={
+            isClaudeRuntime()
+              ? 'Dentro do Claude o app não mostra notificações: para ser lembrado, crie os blocos deste hábito no Google Agenda (Calendário externo). Este ajuste vale quando o Rotinas é usado como site.'
+              : 'Notificação local deste aparelho, só se as notificações estiverem ativadas em Configurações.'
+          }
           checked={draft.reminder.enabled}
           onChange={(enabled) =>
             set({

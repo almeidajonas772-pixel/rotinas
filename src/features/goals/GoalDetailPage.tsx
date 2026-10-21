@@ -424,7 +424,7 @@ function GoalDetail({ goal, ctx }: { goal: Goal; ctx: FullGoalContext }) {
           </p>
         ) : kai.state !== 'ready' ? (
           <Notice tone="warn" title="Kai indisponível agora">
-            {kai.state === 'offline' ? 'Sem conexão.' : kai.state === 'checking' ? 'Verificando a camada privada…' : kai.message}
+            {kai.state === 'offline' ? 'Sem conexão.' : kai.state === 'checking' ? 'Verificando o Kai…' : kai.message}
           </Notice>
         ) : (
           <div className="panel stack">

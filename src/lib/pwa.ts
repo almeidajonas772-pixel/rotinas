@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { isClaudeRuntime } from '../platform/runtime';
 
 /**
  * Registro do service worker (funcionamento offline). Em desenvolvimento o SW não é gerado;
@@ -39,6 +40,8 @@ function subscribe(listener: () => void): () => void {
 const getSnapshot = () => snapshot;
 
 export function registerServiceWorker(): void {
+  // Dentro do Claude não há service worker (o artifact não permite); o app é servido pelo Claude.
+  if (isClaudeRuntime()) return;
   if (registered || !import.meta.env.PROD || typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
   registered = true;
   import('virtual:pwa-register')

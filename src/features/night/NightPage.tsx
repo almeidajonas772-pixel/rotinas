@@ -29,6 +29,7 @@ import { computeNightBrief, nightDateFor, nightSpeech, RADAR_DAYS } from '../../
 import { buildNightPayload, nightEvidence } from '../../domain/nightly-kai';
 import type { ConsentKey, DayPlan, NightMessage } from '../../domain/schemas';
 import { unlockSpeech } from '../../lib/speech';
+import { isClaudeRuntime } from '../../platform/runtime';
 import { useCalendarStatus, useGoogleEvents } from '../calendar/calendar-client';
 import { KAI_SUPPORT_TEXT, runKai, useKaiAvailability, type KaiAvailability } from '../kai/kai-client';
 import { ConsentDialog } from '../privacy/ConsentDialog';
@@ -56,10 +57,20 @@ const normalize = (s: string) =>
 function kaiNote(kai: KaiAvailability): { text: string; tone: 'ok' | 'warn' | 'neutral'; setup: boolean } {
   switch (kai.state) {
     case 'ready':
-      return { text: 'Kai pronto. As respostas são geradas por IA (Anthropic) e podem conter erros.', tone: 'ok', setup: false };
+      return {
+        text: kai.via === 'claude' ? 'Kai pronto, pelo Claude da sua conta. As respostas são geradas por IA e podem conter erros.' : 'Kai pronto. As respostas são geradas por IA (Anthropic) e podem conter erros.',
+        tone: 'ok',
+        setup: false,
+      };
     case 'off':
       return {
-        text: kai.outdated ? 'A autorização do Kai mudou (agora inclui a sessão da noite): revise em Kai para voltar a usar. Enquanto isso, o app lê o resumo dele mesmo.' : 'Kai desligado: o resumo abaixo é calculado pelo app, sem IA, e nada sai do aparelho.',
+        text: kai.outdated
+          ? isClaudeRuntime()
+            ? 'A autorização do Kai é diferente dentro do Claude: revise em Kai para usar. Enquanto isso, o app lê o resumo dele mesmo.'
+            : 'A autorização do Kai mudou (agora inclui a sessão da noite): revise em Kai para voltar a usar. Enquanto isso, o app lê o resumo dele mesmo.'
+          : isClaudeRuntime()
+            ? 'Kai desligado: o resumo abaixo é calculado pelo app, sem IA.'
+            : 'Kai desligado: o resumo abaixo é calculado pelo app, sem IA, e nada sai do aparelho.',
         tone: 'neutral',
         setup: false,
       };
@@ -406,7 +417,9 @@ export function NightPage() {
               : 'Toque na esfera para ouvir o resumo da noite.'
             : canListen
               ? 'Toque na esfera para falar, ou escreva abaixo.'
-              : 'Escreva sua resposta abaixo.';
+              : isClaudeRuntime()
+                ? 'Escreva sua resposta abaixo (ou dite pelo teclado).'
+                : 'Escreva sua resposta abaixo.';
 
   const orbLabel =
     phase === 'listening' ? 'Parar de ouvir' : phase === 'speaking' ? 'Interromper a fala' : phase === 'thinking' ? 'Cancelar o pedido ao Kai' : messages.length === 0 ? 'Começar a sessão da noite' : 'Falar';
@@ -555,7 +568,7 @@ export function NightPage() {
             value={text}
             maxLength={2000}
             rows={2}
-            placeholder={kaiReady ? 'Responda ao Kai (ou use o microfone do teclado para ditar)…' : 'Escreva a prioridade de amanhã…'}
+            placeholder={kaiReady ? (isClaudeRuntime() ? 'Responda ao Kai (para falar, use o ditado do teclado; no Windows, Win + H)…' : 'Responda ao Kai (ou use o microfone do teclado para ditar)…') : 'Escreva a prioridade de amanhã…'}
             disabled={thinking}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -585,7 +598,7 @@ export function NightPage() {
         />
       </Section>
 
-      <Section title="Resumo da noite" id="night-brief" description="Calculado no aparelho a partir dos seus registros. É o que o app lê em voz alta quando o Kai está desligado.">
+      <Section title="Resumo da noite" id="night-brief" description="Calculado pelo app a partir dos seus registros, sem IA. É o que o app lê em voz alta quando o Kai está desligado.">
         <NightBriefCards
           brief={brief}
           googleNote={googleNote}
@@ -644,7 +657,11 @@ export function NightPage() {
         title="Recomeçar a conversa desta noite?"
         confirmLabel="Apagar e recomeçar"
         danger
-        message={<p className="small">A conversa desta noite é apagada deste aparelho. Itens criados na agenda e a prioridade de amanhã continuam salvos.</p>}
+        message={
+          <p className="small">
+            {isClaudeRuntime() ? 'A conversa desta noite é apagada (em todos os seus aparelhos).' : 'A conversa desta noite é apagada deste aparelho.'} Itens criados na agenda e a prioridade de amanhã continuam salvos.
+          </p>
+        }
         onConfirm={async () => {
           voice.stopSpeaking();
           await deleteNightSession(date);

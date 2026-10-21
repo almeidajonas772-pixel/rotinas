@@ -7,11 +7,14 @@ import { usePrefs, useProfile } from '../db/hooks';
 import { rebuildProgressEvents, verifyProgressIntegrity } from '../db/repo-misc';
 import { applyTheme } from '../lib/browser';
 import { useReminderScheduler } from '../lib/notifications';
+import { startCloudSync } from '../platform/cloud-sync';
+import { openLocalDatabase } from '../platform/local-db';
+import { isClaudeRuntime } from '../platform/runtime';
 import { Onboarding } from '../features/onboarding/Onboarding';
 import { AppProvider } from './context';
 import { router } from './router';
 
-type DbState = { status: 'opening' } | { status: 'ready' } | { status: 'error'; title: string; message: string } | { status: 'blocked' };
+type DbState = { status: 'opening' } | { status: 'syncing' } | { status: 'ready' } | { status: 'error'; title: string; message: string } | { status: 'blocked' };
 
 function describeOpenError(error: unknown): { title: string; message: string } {
   const name = error instanceof Error ? error.name : '';
@@ -38,9 +41,16 @@ function DbGate({ children }: { children: ReactNode }) {
     let alive = true;
     const onBlocked = () => alive && setState({ status: 'blocked' });
     db.on('blocked', onBlocked);
-    db.open()
-      .then(async () => {
+    openLocalDatabase(db)
+      .then(async (mode) => {
         if (!alive) return;
+        if (isClaudeRuntime()) {
+          // Dentro do Claude: antes de mostrar a tela, traz os dados guardados na conta da pessoa
+          // (num aparelho novo, isso evita pedir a configuração inicial de novo).
+          setState({ status: 'syncing' });
+          await startCloudSync({ memoryOnly: mode === 'memory' });
+          if (!alive) return;
+        }
         setState({ status: 'ready' });
         // Autocorreção: se o XP gravado divergir do histórico, recalcula a partir das fontes.
         const check = await verifyProgressIntegrity();
@@ -61,6 +71,11 @@ function DbGate({ children }: { children: ReactNode }) {
       {state.status === 'opening' && (
         <p className="meta" role="status">
           Abrindo seus dados locais…
+        </p>
+      )}
+      {state.status === 'syncing' && (
+        <p className="meta" role="status">
+          Carregando seus dados guardados no Claude…
         </p>
       )}
       {state.status === 'blocked' && (

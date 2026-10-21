@@ -21,6 +21,7 @@ import { dailyAggregates, groupCompletions } from '../../domain/stats';
 import { computeStreak } from '../../domain/streak';
 import { useLevel, useNow } from '../shared/data';
 import { DayDial, type DialItem } from './DayDial';
+import { isClaudeRuntime } from '../../platform/runtime';
 
 export function TodayPage() {
   const { profile, prefs, today, timezone, weekStartsOn } = useApp();
@@ -429,7 +430,7 @@ export function TodayPage() {
           </>
         }
       >
-        {noteFor && <TextArea label={noteFor.habit.title} value={noteFor.text} onChange={(text) => setNoteFor({ ...noteFor, text })} maxLength={500} rows={3} hint="Fica só no aparelho e não é enviada ao Kai." />}
+        {noteFor && <TextArea label={noteFor.habit.title} value={noteFor.text} onChange={(text) => setNoteFor({ ...noteFor, text })} maxLength={500} rows={3} hint={isClaudeRuntime() ? 'Fica nos seus dados e nunca é enviada ao Kai.' : 'Fica só no aparelho e não é enviada ao Kai.'} />}
       </Dialog>
 
       <CheckinDialog open={checkinOpen} onClose={() => setCheckinOpen(false)} date={today} />
@@ -518,7 +519,7 @@ function CheckinForm({ date, existing, onClose }: { date: CivilDate; existing: C
       open
       onClose={onClose}
       title="Check-in de hoje"
-      description="Só para você acompanhar como se sente. Não é uma avaliação clínica e fica neste aparelho."
+      description={isClaudeRuntime() ? 'Só para você acompanhar como se sente. Não é uma avaliação clínica e só vai ao Kai com autorização própria.' : 'Só para você acompanhar como se sente. Não é uma avaliação clínica e fica neste aparelho.'}
       footer={
         <>
           {existing && (

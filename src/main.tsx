@@ -7,6 +7,9 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
 
+// Dentro do Claude a página não traz o <html lang>: o idioma ajuda leitores de tela e a hifenização.
+if (!document.documentElement.lang) document.documentElement.lang = 'pt-BR';
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Elemento #root não encontrado');
 

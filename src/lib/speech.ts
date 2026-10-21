@@ -1,3 +1,5 @@
+import { isClaudeRuntime } from '../platform/runtime';
+
 /**
  * Voz da sessão da noite, usando só as APIs do navegador (Web Speech API):
  * - fala (síntese): `speechSynthesis`. Vozes "locais" rodam no aparelho; vozes "online"
@@ -65,7 +67,8 @@ export function isIosStandalone(): boolean {
 export function speechSupport(): SpeechSupport {
   return {
     synthesis: typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined',
-    recognition: Boolean(recognitionCtor()),
+    // Dentro do Claude, a página não tem acesso ao microfone: a pessoa dita pelo teclado.
+    recognition: !isClaudeRuntime() && Boolean(recognitionCtor()),
     iosStandalone: isIosStandalone(),
   };
 }

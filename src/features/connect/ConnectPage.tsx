@@ -13,6 +13,8 @@ import { checkServer, type ServerCheck } from '../../lib/api';
 import { useOnline } from '../../lib/browser';
 import { runKai } from '../kai/kai-client';
 import { ConsentDialog } from '../privacy/ConsentDialog';
+import { isClaudeRuntime } from '../../platform/runtime';
+import { ClaudeConnectPage } from './ClaudeConnectPage';
 
 /**
  * Assistente de conexão: verifica a camada privada passo a passo e mostra exatamente o que falta
@@ -81,6 +83,10 @@ function Redeploy() {
 }
 
 export function ConnectPage() {
+  return isClaudeRuntime() ? <ClaudeConnectPage /> : <WebConnectPage />;
+}
+
+function WebConnectPage() {
   const { prefs } = useApp();
   const toast = useToast();
   const online = useOnline();

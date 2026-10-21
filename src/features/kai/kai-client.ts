@@ -7,19 +7,23 @@ import { KaiConsentError } from '../../domain/kai-context';
 import type { Preferences } from '../../domain/schemas';
 import { callKai, FeatureDisabledError, getHealth, OfflineError, ServerLockedError, ServerUnavailableError, UnauthorizedError } from '../../lib/api';
 import { useOnline } from '../../lib/browser';
+import { checkKaiViaClaude } from '../../platform/kai-claude';
+import { isClaudeRuntime } from '../../platform/runtime';
 import { useGoalContext } from '../shared/data';
 
 export type KaiAvailability =
   | { state: 'off'; outdated?: boolean }
   | { state: 'offline' }
   | { state: 'checking' }
-  | { state: 'unavailable'; message: string; setup: boolean; reason: 'static' | 'locked' | 'not_configured' | 'error' }
+  | { state: 'unavailable'; message: string; setup: boolean; reason: 'static' | 'locked' | 'not_configured' | 'error' | 'claude_absent' | 'claude_denied' }
   | { state: 'unauthorized'; message: string }
-  | { state: 'ready'; models?: { fast: string; deep: string } };
+  | { state: 'ready'; models?: { fast: string; deep: string }; via?: 'server' | 'claude'; firstUse?: boolean };
 
 /**
- * Estado do Kai. Sem consentimento, nada é verificado na rede.
- * Com consentimento, consulta /api/health da camada privada (mesma origem).
+ * Estado do Kai. Sem consentimento, nada é verificado.
+ * - No site: consulta /api/health da camada privada (mesma origem).
+ * - Dentro do Claude: só confere se o Claude está disponível e se a pessoa não recusou o uso
+ *   (sem pedido ao modelo e sem gastar o plano).
  */
 export function useKaiAvailability(): [KaiAvailability, () => void] {
   const { prefs } = useApp();
@@ -34,6 +38,14 @@ export function useKaiAvailability(): [KaiAvailability, () => void] {
     if (!granted || !online) return;
     const controller = new AbortController();
     const settle = (value: KaiAvailability) => setResult({ key, value });
+    if (isClaudeRuntime()) {
+      void checkKaiViaClaude().then((check) => {
+        if (controller.signal.aborted) return;
+        if (check.ok) settle({ state: 'ready', via: 'claude', models: check.models, firstUse: check.permission !== 'granted' });
+        else settle({ state: 'unavailable', setup: false, reason: check.reason, message: check.message });
+      });
+      return () => controller.abort();
+    }
     getHealth('kai', prefs, controller.signal)
       .then((health) => {
         if (health.kai.enabled) settle({ state: 'ready', models: health.kai.models });

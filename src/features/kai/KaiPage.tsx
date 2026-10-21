@@ -1,4 +1,4 @@
-import { Eye, LifeBuoy, RotateCcw } from 'lucide-react';
+import { Eye, LifeBuoy, RotateCcw, ShieldCheck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useApp } from '../../app/context';
@@ -11,6 +11,8 @@ import { setConsent } from '../../db/repo-profile';
 import { buildKaiContext } from '../../domain/kai-context';
 import type { ConsentKey } from '../../domain/schemas';
 import { useUiPref } from '../../lib/browser';
+import { openPermissionsPanel } from '../../platform/claude';
+import { isClaudeRuntime } from '../../platform/runtime';
 import { ConsentDetails, ConsentDialog } from '../privacy/ConsentDialog';
 import { KaiChat } from './KaiChat';
 import { KAI_SUPPORT_TEXT, useKaiAvailability, useKaiSnapshot, type KaiAvailability } from './kai-client';
@@ -138,7 +140,9 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
           <p className="small muted">
             {availability.outdated
               ? 'O texto da autorização mudou: agora ele inclui a sessão da noite (o que você fala ou escreve ao Kai e a prioridade do dia). Até você revisar, o Kai fica desligado e nada é enviado.'
-              : 'Com o Kai desligado, nenhum dado sai deste aparelho e o app funciona por completo. Para ativar, revise o que seria enviado:'}
+              : isClaudeRuntime()
+                ? 'Com o Kai desligado, nada é enviado ao modelo de IA e o app funciona por completo. Para ativar, revise o que seria enviado:'
+                : 'Com o Kai desligado, nenhum dado sai deste aparelho e o app funciona por completo. Para ativar, revise o que seria enviado:'}
           </p>
           <details className="explain">
             <summary>O que o Kai recebe e para onde vai</summary>
@@ -158,7 +162,7 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
         </Notice>
       );
     case 'checking':
-      return <LoadingState label="Verificando a camada privada…" lines={1} />;
+      return <LoadingState label={isClaudeRuntime() ? 'Verificando o Claude…' : 'Verificando a camada privada…'} lines={1} />;
     case 'unauthorized':
       return (
         <Notice tone="warn" title="Acesso recusado pelo servidor" action={<Link to="/conexoes" className="btn btn-secondary btn-sm">Informar a senha do servidor</Link>}>
@@ -166,6 +170,9 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
         </Notice>
       );
     case 'unavailable':
+      if (availability.reason === 'claude_absent' || availability.reason === 'claude_denied') {
+        return <ClaudeUnavailable reason={availability.reason} message={availability.message} onRecheck={onRecheck} onDisable={onDisable} />;
+      }
       return (
         <Notice
           tone="warn"
@@ -196,6 +203,22 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
         </Notice>
       );
     case 'ready':
+      if (availability.via === 'claude') {
+        return (
+          <Notice
+            tone="ok"
+            title="Kai pronto"
+            action={
+              <Button size="sm" variant="ghost" onClick={onDisable}>
+                Desativar Kai
+              </Button>
+            }
+          >
+            O Kai usa o Claude da sua conta, dentro do seu plano — sem chave de API e sem custo extra. Respostas geradas por IA podem conter erros: confira as evidências citadas.
+            {availability.firstUse && ' No primeiro pedido, o Claude pergunta se o Rotinas pode usá-lo: escolha “Permitir”.'} À noite, use a aba <Link to="/noite">Noite</Link>.
+          </Notice>
+        );
+      }
       return (
         <Notice
           tone="ok"
@@ -210,6 +233,45 @@ function KaiStatus({ availability, onRecheck, onEnable, onDisable }: { availabil
         </Notice>
       );
   }
+}
+
+/** Dentro do Claude: o Claude não está disponível nesta visualização, ou a pessoa recusou o uso. */
+function ClaudeUnavailable({ reason, message, onRecheck, onDisable }: { reason: 'claude_absent' | 'claude_denied'; message: string; onRecheck: () => void; onDisable: () => void }) {
+  const toast = useToast();
+  return (
+    <Notice
+      tone="warn"
+      title={reason === 'claude_denied' ? 'O Rotinas não tem permissão para usar o Claude' : 'Claude indisponível nesta página'}
+      role="status"
+      action={
+        <>
+          {reason === 'claude_denied' ? (
+            <Button
+              size="sm"
+              icon={<ShieldCheck size={16} aria-hidden="true" />}
+              onClick={async () => {
+                const opened = await openPermissionsPanel();
+                if (!opened) toast.show('Abra o menu do artifact no Claude e escolha “Permissões”.', { tone: 'danger' });
+                onRecheck();
+              }}
+            >
+              Abrir permissões
+            </Button>
+          ) : (
+            <Button size="sm" icon={<RotateCcw size={16} aria-hidden="true" />} onClick={() => window.location.reload()}>
+              Recarregar
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={onDisable}>
+            Desativar Kai
+          </Button>
+        </>
+      }
+    >
+      <p>{message}</p>
+      <p style={{ marginTop: 6 }}>Nenhuma resposta é inventada enquanto isso: o Kai só aparece quando o Claude responde de verdade.</p>
+    </Notice>
+  );
 }
 
 function ContextPreview({ onClose }: { onClose: () => void }) {
@@ -228,7 +290,11 @@ function ContextPreview({ onClose }: { onClose: () => void }) {
   else if (built)
     content = (
       <div className="stack">
-        <p className="small">Exemplo para uma conversa (últimos 14 dias). Isto é exatamente o que a camada privada repassaria ao provedor — além do texto que você escrever:</p>
+        <p className="small">
+          {isClaudeRuntime()
+            ? 'Exemplo para uma conversa (últimos 14 dias). Isto é exatamente o que o app enviaria ao Claude — além das regras do Kai, do formato da resposta e do texto que você escrever:'
+            : 'Exemplo para uma conversa (últimos 14 dias). Isto é exatamente o que a camada privada repassaria ao provedor — além do texto que você escrever:'}
+        </p>
         <ul className="small">
           {built.manifest.categories.map((c) => (
             <li key={c}>{c}</li>
@@ -237,7 +303,7 @@ function ContextPreview({ onClose }: { onClose: () => void }) {
         <pre className="small" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', background: 'var(--surface-2)', padding: 12, borderRadius: 8, maxHeight: 320, overflow: 'auto' }}>
           {JSON.stringify(built.context, null, 2)}
         </pre>
-        <p className="meta">As referências h1, g1, j1 substituem os identificadores internos; o mapa entre elas fica só no aparelho.</p>
+        <p className="meta">As referências h1, g1, j1 substituem os identificadores internos; o mapa entre elas fica só no app.</p>
       </div>
     );
   return (

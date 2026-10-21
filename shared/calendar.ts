@@ -27,6 +27,12 @@ export interface CalendarStatus {
   canWrite: boolean;
   calendarName?: string;
   authorizedAt?: string;
+  /** Por onde o app fala com o Google: a camada privada (OAuth próprio) ou o conector do Claude. */
+  via?: 'server' | 'claude';
+  /** Só pelo Claude: estado da permissão do app para usar o conector (sem perguntar nada). */
+  permission?: 'granted' | 'prompt' | 'denied' | 'unavailable';
+  /** Só pelo Claude: `unasked` = a pessoa ainda não foi consultada sobre o conector nesta página. */
+  connector?: 'ready' | 'unasked';
 }
 
 export const calendarConnectRequestSchema = z.object({ access: z.enum(['availability', 'events', 'write']) });
@@ -80,7 +86,22 @@ export interface CalendarPreview {
   previewToken: string;
   expiresAt: string;
   blocks: Array<CalendarBlock & { conflicts: BusyBlock[] }>;
+  /** Onde os eventos serão criados, em texto para a pessoa (ex.: agenda “Rotinas” ou agenda principal). */
+  target?: string;
 }
+
+/** Lembrete diário criado no Google Agenda (para a sessão da noite, quando o app não pode notificar). */
+export const dailyReminderRequestSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  /** Horário local `HH:mm` no fuso informado. */
+  time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+  /** Primeiro dia (`AAAA-MM-DD`). */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  timeZone: z.string().min(1).max(64),
+  durationMinutes: z.number().int().min(5).max(120),
+  description: z.string().max(500).optional(),
+});
+export type DailyReminderRequest = z.infer<typeof dailyReminderRequestSchema>;
 
 /**
  * A escrita só acontece com o comprovante de uma prévia recente, os mesmos blocos e confirmação explícita.

@@ -1,11 +1,17 @@
-import type { BusyBlock, CalendarAccess, CalendarApiResponse, CalendarBlock, CalendarCommitResult, CalendarPreview, CalendarStatus, GoogleEvent } from '../../shared/calendar';
+import type { BusyBlock, CalendarAccess, CalendarApiResponse, CalendarBlock, CalendarCommitResult, CalendarPreview, CalendarStatus, DailyReminderRequest, GoogleEvent } from '../../shared/calendar';
 import type { HealthResponse, KaiApiResponse, KaiOutputFor, KaiTask } from '../../shared/kai';
 import type { Preferences } from '../domain/schemas';
+import { claudeCalendarCommit, claudeCalendarCreateDailyReminder, claudeCalendarEvents, claudeCalendarFreeBusy, claudeCalendarPreview, claudeCalendarStatus } from '../platform/calendar-claude';
+import { callKaiViaClaude } from '../platform/kai-claude';
+import { isClaudeRuntime } from '../platform/runtime';
 
 /**
- * Único ponto de saída de rede do app para a camada privada (mesma origem, rota /api).
+ * Único ponto de saída do app para o Kai e o calendário externo.
+ * - No site (`web`): camada privada na mesma origem, rota /api.
+ * - Dentro do Claude (`claude`): o Kai usa o plano do Claude da pessoa e o Google usa o conector
+ *   do Claude (src/platform). Não há servidor nem chamadas de rede feitas pelo app.
  * Antes de qualquer chamada, verifica o consentimento do recurso: com Kai e calendário
- * desligados, nenhuma requisição é feita — nem mesmo a verificação de saúde do servidor.
+ * desligados, nada é enviado — nem mesmo a verificação de saúde do servidor.
  */
 
 export type Feature = 'kai' | 'calendar';
@@ -129,39 +135,85 @@ const KAI_PATHS: Record<KaiTask, string> = {
   nightly: '/api/kai/nightly',
 };
 
-export function callKai<T extends KaiTask>(task: T, payload: unknown, prefs: Preferences, signal?: AbortSignal): Promise<KaiApiResponse<KaiOutputFor<T>>> {
+/** Dentro do Claude: mesmas regras de consentimento e conexão, sem chamada de rede do app. */
+function guardClaude(feature: Feature, prefs: Preferences): void {
+  if (!isFeatureAllowed(feature, prefs)) throw new FeatureDisabledError(feature);
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new OfflineError();
+}
+
+export async function callKai<T extends KaiTask>(task: T, payload: unknown, prefs: Preferences, signal?: AbortSignal): Promise<KaiApiResponse<KaiOutputFor<T>>> {
+  if (isClaudeRuntime()) {
+    guardClaude('kai', prefs);
+    return callKaiViaClaude(task, payload, signal);
+  }
   return apiRequest<KaiApiResponse<KaiOutputFor<T>>>(KAI_PATHS[task], { feature: 'kai', prefs, body: payload, signal });
 }
 
-export function calendarStatus(prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<CalendarStatus>> {
+export async function calendarStatus(prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<CalendarStatus>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return claudeCalendarStatus();
+  }
   return apiRequest('/api/calendar/status', { feature: 'calendar', prefs, method: 'GET', signal });
 }
 
-export function calendarConnect(access: CalendarAccess, prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<{ url: string }>> {
+export async function calendarConnect(access: CalendarAccess, prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<{ url: string }>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return { ok: false, error: { code: 'invalid_request', message: 'Dentro do Claude, o Google Agenda usa o conector do próprio Claude (não há link de autorização).' } };
+  }
   return apiRequest('/api/calendar/connect', { feature: 'calendar', prefs, body: { access }, signal });
 }
 
 /** Eventos da agenda principal (só leitura; até 31 dias por pedido). */
-export function calendarEvents(range: { timeMin: string; timeMax: string; timeZone: string }, prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<{ events: GoogleEvent[] }>> {
+export async function calendarEvents(range: { timeMin: string; timeMax: string; timeZone: string }, prefs: Preferences, signal?: AbortSignal): Promise<CalendarApiResponse<{ events: GoogleEvent[] }>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return claudeCalendarEvents(range, signal);
+  }
   return apiRequest('/api/calendar/events', { feature: 'calendar', prefs, body: range, signal });
 }
 
-export function calendarFreeBusy(range: { timeMin: string; timeMax: string; timeZone: string }, prefs: Preferences): Promise<CalendarApiResponse<{ busy: BusyBlock[] }>> {
+export async function calendarFreeBusy(range: { timeMin: string; timeMax: string; timeZone: string }, prefs: Preferences): Promise<CalendarApiResponse<{ busy: BusyBlock[] }>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return claudeCalendarFreeBusy(range);
+  }
   return apiRequest('/api/calendar/freebusy', { feature: 'calendar', prefs, body: range });
 }
 
-export function calendarPreview(blocks: CalendarBlock[], prefs: Preferences): Promise<CalendarApiResponse<CalendarPreview>> {
+export async function calendarPreview(blocks: CalendarBlock[], prefs: Preferences): Promise<CalendarApiResponse<CalendarPreview>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return claudeCalendarPreview(blocks);
+  }
   return apiRequest('/api/calendar/preview', { feature: 'calendar', prefs, body: { blocks } });
 }
 
 /**
  * Só existe com o comprovante de uma prévia recente, os mesmos blocos e `confirm: true`;
- * o servidor recusa qualquer outra forma. Repetir não duplica eventos.
+ * o servidor (ou, dentro do Claude, o próprio app) recusa qualquer outra forma.
  */
-export function calendarCommit(previewToken: string, blocks: CalendarBlock[], prefs: Preferences): Promise<CalendarApiResponse<CalendarCommitResult>> {
+export async function calendarCommit(previewToken: string, blocks: CalendarBlock[], prefs: Preferences): Promise<CalendarApiResponse<CalendarCommitResult>> {
+  if (isClaudeRuntime()) {
+    guardClaude('calendar', prefs);
+    return claudeCalendarCommit(previewToken, blocks);
+  }
   return apiRequest('/api/calendar/commit', { feature: 'calendar', prefs, body: { previewToken, blocks, confirm: true } });
 }
 
-export function calendarDisconnect(prefs: Preferences): Promise<CalendarApiResponse<{ revoked: boolean }>> {
+/**
+ * Lembrete diário no Google Agenda. Só dentro do Claude, onde o app não pode mostrar notificações
+ * (no site, os lembretes locais fazem esse papel). Chamado apenas depois da confirmação da pessoa.
+ */
+export async function calendarCreateDailyReminder(request: DailyReminderRequest, prefs: Preferences): Promise<CalendarApiResponse<{ eventId?: string }>> {
+  if (!isClaudeRuntime()) return { ok: false, error: { code: 'calendar_disabled', message: 'No site, use os lembretes locais (Configurações → Notificações).' } };
+  guardClaude('calendar', prefs);
+  return claudeCalendarCreateDailyReminder(request);
+}
+
+export async function calendarDisconnect(prefs: Preferences): Promise<CalendarApiResponse<{ revoked: boolean }>> {
+  // Dentro do Claude, o conector é gerenciado no próprio Claude: o app só deixa de usá-lo.
+  if (isClaudeRuntime()) return { ok: true, data: { revoked: false } };
   return apiRequest('/api/calendar/disconnect', { feature: 'calendar', prefs, body: {} });
 }

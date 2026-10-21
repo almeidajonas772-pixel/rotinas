@@ -1,8 +1,11 @@
 import type { ConsentKey } from '../../domain/schemas';
+import { isClaudeRuntime } from '../../platform/runtime';
 
 /**
  * Textos de cada autorização. Cada uma é específica: dizer "sim" para uma nunca liga outra.
  * Se um texto mudar, incremente a versão dele em CONSENT_VERSIONS (db/defaults.ts).
+ * Dentro do Claude o caminho dos dados é outro (sem servidor próprio), então os textos também:
+ * veja CLAUDE_CONSENT_TEXTS e as versões do Claude em db/defaults.ts.
  */
 
 export interface ConsentText {
@@ -104,3 +107,64 @@ export const CONSENT_TEXTS: Record<ConsentKey, ConsentText> = {
     revoke: 'Desligue em Configurações → Notificações ou bloqueie as notificações do site no navegador.',
   },
 };
+
+/**
+ * Textos do Rotinas dentro do Claude: o Kai usa o Claude da conta da pessoa e o Google usa o
+ * conector do Claude. Mudou um texto daqui? Incremente a versão dele em CLAUDE_CONSENT_VERSIONS.
+ */
+export const CLAUDE_CONSENT_TEXTS: Record<ConsentKey, ConsentText> = {
+  kai: {
+    ...CONSENT_TEXTS.kai,
+    sends: [
+      'Seu objetivo principal, períodos livres e minutos por dia (se informados)',
+      'Títulos, categorias, frequências e horários dos hábitos não arquivados',
+      'Contagens do período analisado: previstas, concluídas, puladas, perdidas e sequências',
+      'Títulos, períodos e progresso calculado das metas',
+      'O texto que você escrever na conversa com o Kai',
+      'Na sessão da noite: o que você escrever ao Kai (inclusive por ditado do teclado), a prioridade do dia que você definir e o resumo calculado pelo app (hábitos de hoje, XP do dia, horários dos hábitos de amanhã e ritmo das metas)',
+    ],
+    neverSends: ['Seu nome', 'Observações das conclusões', 'Check-ins, Diário e títulos da agenda (exigem autorizações próprias)', 'Áudio: dentro do Claude o Rotinas não usa o microfone', 'Identificadores internos do app'],
+    destination:
+      'O Claude, na sua própria conta (Anthropic), pela plataforma do claude.ai: o pedido conta no uso do seu plano, como uma conversa sua. Não há servidor do Rotinas no caminho nem chave de API. Na primeira vez, o próprio Claude pergunta se este app pode usá-lo.',
+    revoke: 'Desligue a qualquer momento em Kai ou em Configurações → Autorizações. Revogar também desliga as autorizações de check-ins, Diário e agenda no Kai. Você também pode bloquear o uso do Claude por este app em Permissões, no menu do artifact.',
+  },
+  kaiCheckins: { ...CONSENT_TEXTS.kaiCheckins, destination: 'O Claude, na sua conta, junto do pedido ao Kai.' },
+  kaiJournal: {
+    ...CONSENT_TEXTS.kaiJournal,
+    destination: 'O Claude, na sua conta, junto do pedido ao Kai.',
+    revoke: 'Desligue em Kai ou em Configurações → Autorizações (cada entrada também pode ser bloqueada no Diário). O Diário volta a não ser enviado ao Kai.',
+  },
+  kaiAgenda: { ...CONSENT_TEXTS.kaiAgenda, destination: 'O Claude, na sua conta, junto do pedido da sessão da noite.' },
+  calendar: {
+    title: 'Google Agenda (pelo conector do Claude)',
+    summary:
+      'Permite que o Rotinas use o conector do Google Calendar que você conectou ao seu Claude para ler título, horário e cor dos eventos da agenda principal, saber quando você está ocupado e, só depois da sua confirmação, criar blocos de tempo e o lembrete da noite.',
+    sends: [
+      'Ao Google (pelo conector): o intervalo de datas consultado e o seu fuso horário',
+      'Ao Google: título, horário e duração dos blocos e lembretes que você confirmar',
+    ],
+    neverSends: ['Hábitos, metas, Diário ou check-ins que não estejam num bloco confirmado por você', 'Descrição, local e participantes dos seus eventos (o app descarta esses campos ao ler)'],
+    destination:
+      'O conector do Google Calendar da sua conta do Claude, que fala com o Google em seu nome. O Rotinas não vê nem guarda senhas ou tokens do Google, e os eventos lidos não são guardados. Na primeira leitura, o Claude pergunta se este app pode usar o conector.',
+    when: 'Quando você abre as telas que usam a agenda (Calendário externo e Noite), pede horários no planejador ou confirma a criação de blocos.',
+    revoke: 'Desligue aqui no Rotinas (Calendário externo ou Configurações → Autorizações): o app para de usar o conector na hora. Para cortar o acesso do Claude ao Google, desconecte o Google Calendar em claude.ai → Configurações → Conectores.',
+  },
+  voice: {
+    title: 'Vozes online',
+    summary: 'Permite ler as respostas do Kai em voz alta também com vozes “online” do navegador. Vozes do próprio aparelho funcionam sem esta autorização.',
+    sends: ['Se você escolher uma voz marcada como “online”: o texto lido em voz alta, para o serviço dessa voz (Google, Microsoft ou Apple, conforme o aparelho)'],
+    neverSends: ['Áudio: dentro do Claude o Rotinas não usa o microfone (para falar, use o ditado do teclado)'],
+    destination: 'Serviço de voz do navegador ou do sistema, só para vozes online.',
+    when: 'Só quando uma resposta é lida em voz alta com uma voz online.',
+    revoke: 'Desligue na tela Noite (Ajustes de voz) ou em Configurações → Autorizações.',
+  },
+  notifications: {
+    ...CONSENT_TEXTS.notifications,
+    summary: 'Dentro do Claude, o app não pode mostrar notificações. Para lembretes, use o lembrete da noite e os blocos no Google Agenda.',
+  },
+};
+
+/** O texto da autorização no ambiente atual (site ou dentro do Claude). */
+export function consentText(key: ConsentKey): ConsentText {
+  return isClaudeRuntime() ? CLAUDE_CONSENT_TEXTS[key] : CONSENT_TEXTS[key];
+}

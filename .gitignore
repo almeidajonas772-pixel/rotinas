@@ -1,9 +1,12 @@
 node_modules/
 dist/
 dist-server/
+dist-claude/
 coverage/
 playwright-report/
+playwright-report-claude/
 test-results/
+test-results-claude/
 .data/
 .env
 .env.*

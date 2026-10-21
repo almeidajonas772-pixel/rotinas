@@ -9,6 +9,7 @@ import { clearKaiHistory, deleteConversation, deleteInsight } from '../../db/rep
 import { formatInstant, formatRange } from '../../domain/format';
 import type { KaiInsight } from '../../domain/schemas';
 import { NextStepResult, ReviewResult, type StoredNextStep, type StoredReview } from './kai-render';
+import { isClaudeRuntime } from '../../platform/runtime';
 
 const KIND_LABEL: Record<KaiInsight['kind'], string> = {
   weekly_review: 'Revisão semanal',
@@ -31,7 +32,7 @@ export function KaiHistory() {
   if (insights.length === 0 && conversations.length === 0) {
     return (
       <EmptyState title="Nada no histórico">
-        <p>Revisões, sugestões de próximo passo e conversas ficam guardadas aqui, só neste aparelho.</p>
+        <p>{isClaudeRuntime() ? 'Revisões, sugestões de próximo passo e conversas ficam guardadas aqui, nos seus dados.' : 'Revisões, sugestões de próximo passo e conversas ficam guardadas aqui, só neste aparelho.'}</p>
       </EmptyState>
     );
   }
@@ -114,7 +115,7 @@ export function KaiHistory() {
         title="Apagar histórico do Kai?"
         danger
         confirmLabel="Apagar histórico"
-        message={<p className="small">Conversas e análises guardadas neste aparelho serão apagadas. Hábitos, metas e o Diário não são afetados.</p>}
+        message={<p className="small">{isClaudeRuntime() ? 'Conversas e análises do Kai serão apagadas (em todos os seus aparelhos).' : 'Conversas e análises guardadas neste aparelho serão apagadas.'} Hábitos, metas e o Diário não são afetados.</p>}
         onConfirm={async () => {
           await clearKaiHistory();
           setConfirmClear(false);

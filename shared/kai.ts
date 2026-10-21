@@ -408,7 +408,8 @@ export type KaiErrorCode = (typeof kaiErrorCodes)[number];
 export interface KaiMeta {
   task: KaiTask;
   model: string;
-  provider: 'anthropic';
+  /** `anthropic`: chave da API na camada privada. `claude`: plano do Claude da própria pessoa (app dentro do Claude). */
+  provider: 'anthropic' | 'claude';
   usage?: { inputTokens: number; outputTokens: number };
 }
 

@@ -18,6 +18,9 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { Button } from '../components/ui';
 import { useOnline } from '../lib/browser';
 import { usePwa } from '../lib/pwa';
+import { isClaudeRuntime } from '../platform/runtime';
+import { useCloudSync } from '../platform/cloud-sync';
+import { cloudSummary } from '../features/shared/cloud-summary';
 
 const NAV = [
   { to: '/', label: 'Hoje', icon: Sun, end: true },
@@ -60,6 +63,8 @@ export function BrandMark() {
 
 export function Shell() {
   const online = useOnline();
+  const sync = useCloudSync();
+  const cloudFooter = cloudSummary(sync);
   const pwa = usePwa();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
@@ -100,13 +105,15 @@ export function Shell() {
             {item.label}
           </NavLink>
         ))}
-        <p className="nav-footer">Seus dados ficam neste navegador.</p>
+        <p className="nav-footer">{cloudFooter}</p>
       </nav>
       <div className="shell-main">
         {!online && (
           <div className="banner" role="status">
             <WifiOff size={16} aria-hidden="true" />
-            Sem conexão. Tudo continua funcionando e salvando neste aparelho; Kai e calendário externo voltam quando a conexão voltar.
+            {isClaudeRuntime()
+              ? 'Sem conexão. O que você registrar fica neste aparelho e vai para a sua conta do Claude quando a conexão voltar; Kai e Google Agenda também voltam.'
+              : 'Sem conexão. Tudo continua funcionando e salvando neste aparelho; Kai e calendário externo voltam quando a conexão voltar.'}
           </div>
         )}
         {pwa.needRefresh && (

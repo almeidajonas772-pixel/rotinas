@@ -9,8 +9,14 @@ com a sua autorização explícita para cada tipo de dado.
 
 Decisões técnicas, modelo de dados e regras de cálculo: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
+> **Sem custo extra:** o Rotinas também roda **dentro do Claude**, como artifact — veja
+> [Rotinas no Claude](#rotinas-no-claude-sem-custo-extra). Lá o Kai usa o plano do Claude da pessoa
+> (sem chave de API), o Google usa o conector do Claude (sem Google Cloud) e os dados ficam na conta,
+> iguais no iPad e no computador. Nada de Vercel, Blob ou créditos da Anthropic.
+
 ## Sumário
 
+- [Rotinas no Claude (sem custo extra)](#rotinas-no-claude-sem-custo-extra)
 - [Requisitos](#requisitos)
 - [Executar no computador](#executar-no-computador)
 - [Publicar na Vercel com Kai e Google (iPad e Windows)](#publicar-na-vercel-com-kai-e-google-ipad-e-windows)
@@ -25,6 +31,36 @@ Decisões técnicas, modelo de dados e regras de cálculo: [docs/ARQUITETURA.md]
 - [Testes e verificações](#testes-e-verificações)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Limitações conhecidas](#limitações-conhecidas)
+
+## Rotinas no Claude (sem custo extra)
+
+O mesmo app, num único arquivo publicado como artifact no claude.ai. Ele usa capacidades do próprio
+Claude em vez de um servidor:
+
+| Parte | No site (Vercel) | Dentro do Claude |
+| --- | --- | --- |
+| Kai | camada privada + `ANTHROPIC_API_KEY` (pago por uso) | capacidade `sample`: o Claude da pessoa, dentro do plano dela |
+| Google Agenda | OAuth próprio no Google Cloud | capacidade `mcp`: o conector Google Calendar do Claude (`list_events`, `create_event`, `list_calendars`) |
+| Dados | IndexedDB do navegador (backup manual) | capacidade `db`, área privada `data/users/<id>/`, com cópia no IndexedDB e sincronização entre aparelhos |
+| Backup | download do navegador | capacidade `downloads` (o Claude confirma o arquivo) |
+| Lembretes | notificações locais | o Claude não libera notificações: lembrete da noite e blocos de hábitos viram eventos no Google Agenda |
+| Voz | reconhecimento de fala do navegador | sem microfone dentro do Claude: ditado do teclado (iPad: microfone do teclado; Windows: Win + H); leitura em voz alta continua |
+
+```powershell
+npm run build:claude        # gera release/rotinas-claude/index.html (JS, CSS e fontes embutidos)
+npm run test:e2e:claude     # a página real com um Claude simulado (dois aparelhos, Kai, Google, backup, axe)
+```
+
+Publicação: o arquivo `release/rotinas-claude/index.html` é publicado como artifact com as capacidades
+`db`, `user`, `sample`, `downloads` e `mcp` (servidor `Google Calendar`, ferramentas `list_events`,
+`create_event` e `list_calendars`). O código desse modo fica em `src/platform/` (acesso às capacidades,
+Kai, Google e sincronização) e `src/sync/` (motor de sincronização testado à parte). As regras do Kai
+são as mesmas da camada privada (`shared/kai-core.ts`): validação, limiar de dados, contexto mínimo e
+resposta validada — uma falha nunca vira resposta inventada.
+
+Uso: abrir o artifact no claude.ai ou no app do Claude, no iPad e no computador, com a mesma conta. Na
+primeira vez que o Kai ou o Google forem usados, o próprio Claude pergunta se o app pode usá-los. O
+assistente **Conectar Kai e Google** (menu Mais) mostra o que já funciona e testa cada parte.
 
 ## Requisitos
 
@@ -268,8 +304,11 @@ shared/         contratos validados entre app e camada privada (Kai e calendári
 server/         camada privada: Hono, adaptador Anthropic, OAuth/Calendar, armazenamento, proteções;
                 entradas para Node (server/node.ts) e Vercel (server/vercel.ts)
 scripts/        build da função para a Vercel e pacote estático
+src/platform/   Rotinas dentro do Claude: capacidades, Kai (`sample`), Google (`mcp`), dados (`db`)
+src/sync/       motor de sincronização entre aparelhos (pacotes, último registro vence, exclusões)
 tests/          unidade, banco, servidor e componentes (Vitest)
 e2e/            fluxos no navegador (Playwright + axe-core)
+e2e-claude/     a página publicada no Claude, com um Claude simulado (dois aparelhos, Kai, Google)
 docs/           arquitetura e decisões
 ```
 
@@ -282,7 +321,13 @@ docs/           arquitetura e decisões
 - A leitura de eventos cobre a agenda principal da conta Google (não agendas assinadas de terceiros).
 - Detecção de provas e prazos é por palavras do título: pode deixar passar ou marcar algo a mais.
 - Lembretes só aparecem com o app aberto; não há push em segundo plano.
-- Sem sincronização entre aparelhos; a estratégia é backup manual. O backup não é criptografado.
+- No site, sem sincronização entre aparelhos (backup manual). Dentro do Claude, os dados sincronizam
+  pela conta; em edições simultâneas do mesmo registro em dois aparelhos, vale a mais recente.
+- Dentro do Claude: sem notificações nem microfone (limites da plataforma); o Kai consome o uso do
+  plano do Claude e respeita os limites dele. O modo Claude foi testado com um Claude simulado; o
+  formato exato da resposta de `create_event` do conector não pôde ser observado sem criar um evento
+  real, então o id do evento criado é lido de forma tolerante.
+- O backup não é criptografado.
 - Recorrência de hábitos: diária ou por dias da semana. Agenda: diária ou semanal.
 - Itens criados no Google a partir do app não são apagados lá quando apagados no app (a tela avisa).
 - Na nuvem, o limite por minuto do Kai vale por instância da função; o teto diário fica no Blob e o

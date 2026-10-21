@@ -16,9 +16,12 @@ import { formatInstant } from '../../domain/format';
 import type { Availability, ConsentKey, DayPeriod } from '../../domain/schemas';
 import { listTimeZones, zoneOffsetLabel } from '../../domain/tz';
 import { calendarDisconnect, getHealth } from '../../lib/api';
-import { canShareFile, clearUiPrefs, downloadText, formatBytes, goToToday, makeTextFile, readFileAsText, requestPersistentStorage, shareFile, useStorageInfo } from '../../lib/browser';
+import { canShareFile, clearUiPrefs, downloadProblem, downloadText, formatBytes, goToToday, makeTextFile, readFileAsText, requestPersistentStorage, shareFile, useStorageInfo } from '../../lib/browser';
 import { showLocalNotification, useNotificationPermission } from '../../lib/notifications';
-import { CONSENT_TEXTS } from '../privacy/consent-texts';
+import { wipeCloudAndLocal } from '../../platform/cloud-sync';
+import { isClaudeRuntime } from '../../platform/runtime';
+import { CloudStatus } from '../shared/CloudStatus';
+import { consentText } from '../privacy/consent-texts';
 import { ConsentDialog } from '../privacy/ConsentDialog';
 
 export function SettingsPage() {
@@ -31,13 +34,16 @@ export function SettingsPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Configurações" subtitle="Perfil local, notificações, autorizações, servidor privado e seus dados." />
+      <PageHeader
+        title="Configurações"
+        subtitle={isClaudeRuntime() ? 'Perfil, lembretes, autorizações e seus dados (guardados na sua conta do Claude).' : 'Perfil local, notificações, autorizações, servidor privado e seus dados.'}
+      />
       <ProfileSection />
       <AppearanceSection />
       <CheckinSection />
-      <NotificationsSection />
+      {isClaudeRuntime() ? <ClaudeRemindersSection /> : <NotificationsSection />}
       <ConsentsSection />
-      <ServerSection />
+      {!isClaudeRuntime() && <ServerSection />}
       <DataSection />
       <AboutSection />
     </div>
@@ -78,7 +84,7 @@ function ProfileSection() {
   }
 
   return (
-    <Section title="Perfil local" id="perfil">
+    <Section title={isClaudeRuntime() ? 'Perfil' : 'Perfil local'} id="perfil">
       <div className="panel stack">
         <TextField label="Nome" optional value={name} onChange={setName} maxLength={60} hint="Usado só em saudações. Nunca é enviado ao Kai." />
         <SelectField
@@ -185,7 +191,11 @@ function CheckinSection() {
       <div className="panel">
         <SwitchRow
           label="Ativar check-in de humor e energia"
-          description="Opcional e só local. Duas escalas de 1 a 5 e uma nota, para você notar padrões. Não é avaliação clínica."
+          description={
+            isClaudeRuntime()
+              ? 'Opcional. Duas escalas de 1 a 5 e uma nota, para você notar padrões; ficam nos seus dados e só vão ao Kai com autorização própria. Não é avaliação clínica.'
+              : 'Opcional e só local. Duas escalas de 1 a 5 e uma nota, para você notar padrões. Não é avaliação clínica.'
+          }
           checked={prefs.features.checkins}
           onChange={async (on) => {
             await updatePrefs((p) => ({ ...p, features: { checkins: on } }));
@@ -290,10 +300,33 @@ function NotificationsSection() {
   );
 }
 
+/** Dentro do Claude, o app não pode mostrar notificações: os lembretes vêm do Google Agenda. */
+function ClaudeRemindersSection() {
+  return (
+    <Section title="Lembretes" id="notificacoes">
+      <div className="panel stack small">
+        <p>
+          Dentro do Claude, o Rotinas não consegue mostrar notificações do sistema (o Claude não libera isso para apps dentro dele). Para ser lembrado sem pagar nada, use o Google Agenda — ele avisa no
+          celular, no iPad e no computador:
+        </p>
+        <ul>
+          <li>
+            <strong>Sessão da noite:</strong> em <Link to="/noite">Noite</Link> → Ajustes, crie o lembrete diário no Google Agenda.
+          </li>
+          <li>
+            <strong>Hábitos:</strong> em <Link to="/calendario">Calendário externo</Link>, planeje os blocos de um hábito e marque “Também criar no Google Agenda”. Cada bloco chega com os lembretes padrão da sua
+            agenda.
+          </li>
+        </ul>
+      </div>
+    </Section>
+  );
+}
+
 function ConsentsSection() {
   const { prefs, timezone } = useApp();
   const toast = useToast();
-  const keys: ConsentKey[] = ['kai', 'kaiCheckins', 'kaiJournal', 'kaiAgenda', 'calendar', 'voice', 'notifications'];
+  const keys: ConsentKey[] = isClaudeRuntime() ? ['kai', 'kaiCheckins', 'kaiJournal', 'kaiAgenda', 'calendar', 'voice'] : ['kai', 'kaiCheckins', 'kaiJournal', 'kaiAgenda', 'calendar', 'voice', 'notifications'];
   return (
     <Section title="Autorizações" id="autorizacoes" description="Cada autorização é independente e pode ser revogada a qualquer momento. Revogar interrompe envios futuros.">
       <ul className="list" role="list">
@@ -303,7 +336,7 @@ function ConsentsSection() {
             <li key={k} className="list-row">
               <span className={`status-dot ${c.granted ? 'is-on' : 'is-off'}`} aria-hidden="true" />
               <div className="row-main">
-                <span className="row-title">{CONSENT_TEXTS[k].title}</span>
+                <span className="row-title">{consentText(k).title}</span>
                 <span className="row-meta">
                   {c.granted ? 'Autorizado' : c.outdated ? 'Texto atualizado: revise para voltar a usar' : 'Não autorizado'}
                   {c.updatedAt ? `, decisão em ${formatInstant(c.updatedAt, timezone)}` : ''}
@@ -325,7 +358,7 @@ function ConsentsSection() {
         })}
       </ul>
       <p className="meta" style={{ marginTop: 8 }}>
-        Para conceder, use a tela de cada recurso (Kai, Noite, Calendário externo, Notificações). Detalhes em <Link to="/configuracoes/privacidade">Privacidade</Link>.
+        Para conceder, use a tela de cada recurso ({isClaudeRuntime() ? 'Kai, Noite e Calendário externo' : 'Kai, Noite, Calendário externo, Notificações'}). Detalhes em <Link to="/configuracoes/privacidade">Privacidade</Link>.
       </p>
     </Section>
   );
@@ -413,12 +446,15 @@ function DataSection() {
   const [pendingShare, setPendingShare] = useState<File | null>(null);
   // Compartilhar (ex.: "Salvar em Arquivos" no iPad) só aparece onde o navegador aceita arquivos JSON.
   const [shareSupported] = useState(() => canShareFile(makeTextFile('teste.json', '{}', 'application/json')));
+  const claude = isClaudeRuntime();
+  const canDisconnectServer = !claude && integration?.status === 'connected' && prefs.consents.calendar.granted;
 
   async function exportJson() {
     try {
       const file = await exportBackup();
-      downloadText(backupFileName('json', today), JSON.stringify(file, null, 2), 'application/json');
-      toast.show('Backup JSON exportado.');
+      const result = await downloadText(backupFileName('json', today), JSON.stringify(file, null, 2), 'application/json');
+      const problem = downloadProblem(result);
+      toast.show(problem ?? 'Backup JSON exportado.', problem ? { tone: 'danger' } : undefined);
     } catch (e) {
       toast.show(describeError(e), { tone: 'danger' });
     }
@@ -426,8 +462,9 @@ function DataSection() {
 
   async function exportMd() {
     try {
-      downloadText(backupFileName('md', today), await exportReadable(), 'text/markdown');
-      toast.show('Exportação legível gerada.');
+      const result = await downloadText(backupFileName('md', today), await exportReadable(), 'text/markdown');
+      const problem = downloadProblem(result);
+      toast.show(problem ?? 'Exportação legível gerada.', problem ? { tone: 'danger' } : undefined);
     } catch (e) {
       toast.show(describeError(e), { tone: 'danger' });
     }
@@ -466,26 +503,35 @@ function DataSection() {
   return (
     <Section title="Seus dados" id="dados">
       <div className="panel stack">
-        <div className="row">
-          <HardDrive size={18} aria-hidden="true" />
-          <p className="small grow">
-            Armazenamento neste navegador: {storage?.supported ? `${formatBytes(storage.usage)} usados` : 'informação indisponível'}.{' '}
-            {storage?.persisted === true ? 'Persistente (o navegador não apaga sozinho).' : storage?.persisted === false ? 'Não persistente: o navegador pode apagar dados se faltar espaço.' : ''}
-          </p>
-          {storage?.persisted === false && (
-            <Button
-              size="sm"
-              onClick={async () => {
-                const ok = await requestPersistentStorage();
-                setStorageKey((k) => k + 1);
-                toast.show(ok ? 'Armazenamento persistente concedido.' : 'O navegador não concedeu agora. Instalar o app ajuda.');
-              }}
-            >
-              Pedir persistência
-            </Button>
-          )}
-        </div>
-        <p className="small muted">Não há sincronização em nuvem: faça backups para trocar de aparelho ou se proteger de uma limpeza do navegador.</p>
+        {claude ? (
+          <>
+            <CloudStatus />
+            <p className="small muted">Backups continuam úteis: guarde um arquivo de vez em quando, fora do Claude.</p>
+          </>
+        ) : (
+          <>
+            <div className="row">
+              <HardDrive size={18} aria-hidden="true" />
+              <p className="small grow">
+                Armazenamento neste navegador: {storage?.supported ? `${formatBytes(storage.usage)} usados` : 'informação indisponível'}.{' '}
+                {storage?.persisted === true ? 'Persistente (o navegador não apaga sozinho).' : storage?.persisted === false ? 'Não persistente: o navegador pode apagar dados se faltar espaço.' : ''}
+              </p>
+              {storage?.persisted === false && (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    const ok = await requestPersistentStorage();
+                    setStorageKey((k) => k + 1);
+                    toast.show(ok ? 'Armazenamento persistente concedido.' : 'O navegador não concedeu agora. Instalar o app ajuda.');
+                  }}
+                >
+                  Pedir persistência
+                </Button>
+              )}
+            </div>
+            <p className="small muted">Não há sincronização em nuvem: faça backups para trocar de aparelho ou se proteger de uma limpeza do navegador.</p>
+          </>
+        )}
         <div className="btn-row">
           <Button variant="primary" icon={<Download size={18} aria-hidden="true" />} onClick={() => void exportJson()}>
             Exportar backup (JSON)
@@ -516,7 +562,7 @@ function DataSection() {
             O navegador pediu um novo toque para abrir o compartilhamento.
           </Notice>
         )}
-        <p className="meta">O backup inclui o Diário. A senha do servidor e o estado das integrações não entram no arquivo.</p>
+        <p className="meta">{claude ? 'O backup inclui o Diário. O estado das integrações não entra no arquivo.' : 'O backup inclui o Diário. A senha do servidor e o estado das integrações não entram no arquivo.'}</p>
         <hr className="divider" />
         <div className="row">
           <Button
@@ -544,9 +590,11 @@ function DataSection() {
         {integrity && <p className="small" role="status">{integrity}</p>}
         <hr className="divider" />
         <div>
-          <p className="switch-label">Apagar todos os dados locais</p>
+          <p className="switch-label">{claude ? 'Apagar todos os dados' : 'Apagar todos os dados locais'}</p>
           <p className="small muted" style={{ marginTop: 4 }}>
-            Remove perfil, hábitos, registros, metas, agenda, Diário, check-ins e histórico do Kai deste navegador. Exporte um backup antes.
+            {claude
+              ? 'Remove perfil, hábitos, registros, metas, agenda, Diário, check-ins e histórico do Kai da sua conta neste app — em todos os aparelhos. Exporte um backup antes.'
+              : 'Remove perfil, hábitos, registros, metas, agenda, Diário, check-ins e histórico do Kai deste navegador. Exporte um backup antes.'}
           </p>
           <div className="btn-row" style={{ marginTop: 8 }}>
             <Button icon={<Download size={18} aria-hidden="true" />} onClick={() => void exportJson()}>
@@ -617,7 +665,11 @@ function DataSection() {
                 {w}
               </Notice>
             ))}
-            <Notice tone="warn">Restaurar substitui todos os dados atuais deste navegador pelo conteúdo do backup. O XP é recalculado a partir do histórico importado.</Notice>
+            <Notice tone="warn">
+              {claude
+                ? 'Restaurar substitui todos os dados atuais (na sua conta do Claude e em todos os aparelhos) pelo conteúdo do backup. O XP é recalculado a partir do histórico importado.'
+                : 'Restaurar substitui todos os dados atuais deste navegador pelo conteúdo do backup. O XP é recalculado a partir do histórico importado.'}
+            </Notice>
             <CheckField label="Entendo que os dados atuais serão substituídos" checked={Boolean(importState.understood)} onChange={(understood) => setImportState({ ...importState, understood })} />
           </div>
         )}
@@ -626,28 +678,30 @@ function DataSection() {
       <ConfirmDialog
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
-        title="Apagar todos os dados locais?"
+        title={claude ? 'Apagar todos os dados?' : 'Apagar todos os dados locais?'}
         danger
         requireText="APAGAR"
         confirmLabel="Apagar tudo"
         message={
           <div className="stack small">
-            <p>Tudo o que o Rotinas guardou neste navegador será removido. Não dá para desfazer sem um backup.</p>
-            {integration?.status === 'connected' && prefs.consents.calendar.granted && (
-              <CheckField label="Também desconectar o Google Calendar no servidor (revogar e apagar tokens)" checked={alsoDisconnect} onChange={setAlsoDisconnect} />
-            )}
+            <p>
+              {claude
+                ? 'Tudo o que o Rotinas guardou na sua conta neste app será removido, e os outros aparelhos apagam a cópia deles quando abrirem o Rotinas. Não dá para desfazer sem um backup. Eventos já criados no Google Agenda continuam lá.'
+                : 'Tudo o que o Rotinas guardou neste navegador será removido. Não dá para desfazer sem um backup.'}
+            </p>
+            {canDisconnectServer && <CheckField label="Também desconectar o Google Calendar no servidor (revogar e apagar tokens)" checked={alsoDisconnect} onChange={setAlsoDisconnect} />}
           </div>
         }
         onConfirm={async () => {
           try {
-            if (alsoDisconnect && integration?.status === 'connected' && prefs.consents.calendar.granted) {
+            if (alsoDisconnect && canDisconnectServer) {
               await calendarDisconnect(prefs).catch(() => undefined);
             }
-            await clearAllData();
+            const where = claude ? await wipeCloudAndLocal() : (await clearAllData(), 'local');
             clearUiPrefs();
             // Um novo começo (ou restauração) abre na tela Hoje, não nesta.
             goToToday();
-            toast.show('Todos os dados locais foram apagados.');
+            toast.show(where === 'cloud' ? 'Todos os dados foram apagados da sua conta e deste aparelho.' : 'Todos os dados locais foram apagados.');
           } catch (e) {
             toast.show(describeError(e), { tone: 'danger' });
           }
@@ -662,7 +716,14 @@ function AboutSection() {
   return (
     <Section title="Sobre esta versão" id="sobre">
       <div className="panel stack small">
-        <p>Rotinas 1.0 — organizador pessoal local. Sem conta, sem anúncios, sem telemetria e sem fontes ou scripts de terceiros: tudo o que a interface usa vem junto com o app.</p>
+        {isClaudeRuntime() ? (
+          <p>
+            Rotinas 1.2 dentro do Claude — sem servidor próprio e sem custo extra: o Kai usa o seu plano do Claude, o Google Agenda usa o conector do seu Claude e os dados ficam na área privada da sua conta
+            neste app. Sem anúncios, sem telemetria e sem scripts de terceiros.
+          </p>
+        ) : (
+          <p>Rotinas 1.0 — organizador pessoal local. Sem conta, sem anúncios, sem telemetria e sem fontes ou scripts de terceiros: tudo o que a interface usa vem junto com o app.</p>
+        )}
         <p>O Rotinas não faz diagnósticos nem promete resultados de saúde, produtividade ou finanças.</p>
         <p className="muted">Esta versão aplica privacidade por padrão, mas não foi auditada de forma independente e não alega certificações ou conformidade completa com leis de proteção de dados. Antes de oferecê-la a outras pessoas, ela requer revisão de segurança e jurídica.</p>
       </div>

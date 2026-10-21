@@ -1,11 +1,24 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { capabilityErrorCode, claudeCapability } from '../platform/claude';
+import { isClaudeRuntime } from '../platform/runtime';
 
 /** Utilidades de navegador: tema, conexão, arquivos, preferências leves de interface e armazenamento persistente. */
 
 // ── Tema ──────────────────────────────────────────────────────────────────
 
+/** Tema que o Claude aplicou à página antes de o app mudar algo (dentro do Claude). */
+let hostTheme: string | undefined | null = null;
+
 export function applyTheme(theme: 'system' | 'light' | 'dark'): void {
   const root = document.documentElement;
+  if (isClaudeRuntime()) {
+    // Dentro do Claude, "sistema" significa seguir o tema do próprio Claude (que marca a página).
+    if (hostTheme === null) hostTheme = root.dataset.theme;
+    if (theme !== 'system') root.dataset.theme = theme;
+    else if (hostTheme) root.dataset.theme = hostTheme;
+    else delete root.dataset.theme;
+    return;
+  }
   if (theme === 'system') delete root.dataset.theme;
   else root.dataset.theme = theme;
 }
@@ -76,7 +89,24 @@ export function useUiPref<T>(key: string, fallback: T): [T, (value: T) => void] 
 
 // ── Arquivos ──────────────────────────────────────────────────────────────
 
-export function downloadText(filename: string, content: string, mime: string): void {
+export type DownloadResult = 'saved' | 'declined' | 'busy' | 'unavailable';
+
+/**
+ * Entrega um arquivo gerado pelo app. No site, baixa direto. Dentro do Claude, o navegador não
+ * deixa a página baixar sozinha: o Claude mostra uma confirmação e salva se a pessoa aceitar.
+ */
+export async function downloadText(filename: string, content: string, mime: string): Promise<DownloadResult> {
+  if (isClaudeRuntime()) {
+    const downloads = await claudeCapability('downloads');
+    if (!downloads) return 'unavailable';
+    try {
+      await downloads.save({ filename, data: content });
+      return 'saved';
+    } catch (error) {
+      const code = capabilityErrorCode(error);
+      return code === 'declined' ? 'declined' : code === 'rate_limited' ? 'busy' : 'unavailable';
+    }
+  }
   const blob = new Blob([content], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -87,6 +117,7 @@ export function downloadText(filename: string, content: string, mime: string): v
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return 'saved';
 }
 
 /**
@@ -94,6 +125,8 @@ export function downloadText(filename: string, content: string, mime: string): v
  * Arquivos", iCloud Drive etc.). Só aparece onde o navegador aceita compartilhar esse tipo de arquivo.
  */
 export function canShareFile(file: File): boolean {
+  // Dentro do Claude, a folha de compartilhamento do sistema não está disponível para a página.
+  if (isClaudeRuntime()) return false;
   try {
     return typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
   } catch {
@@ -189,7 +222,21 @@ export function prefersReducedMotion(): boolean {
   }
 }
 
-/** Volta para a tela Hoje sem criar entrada no histórico (o app usa rotas por hash). */
+/** Volta para a tela Hoje sem criar entrada no histórico (o app usa rotas por hash, também dentro do Claude). */
 export function goToToday(): void {
   window.location.replace('#/');
+}
+
+/** Mensagem para o resultado de um download (o "salvo" de cada tela fica com quem chamou). */
+export function downloadProblem(result: DownloadResult): string | null {
+  switch (result) {
+    case 'saved':
+      return null;
+    case 'declined':
+      return 'Download cancelado.';
+    case 'busy':
+      return 'Já há um pedido de download aberto: responda a ele e tente de novo.';
+    case 'unavailable':
+      return 'Esta visualização não permite baixar arquivos. Abra o Rotinas pelo claude.ai e tente de novo.';
+  }
 }

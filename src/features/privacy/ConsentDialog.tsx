@@ -1,10 +1,10 @@
 import { Dialog } from '../../components/dialog';
 import { Button } from '../../components/ui';
 import type { ConsentKey } from '../../domain/schemas';
-import { CONSENT_TEXTS } from './consent-texts';
+import { consentText } from './consent-texts';
 
 export function ConsentDetails({ consent }: { consent: ConsentKey }) {
-  const t = CONSENT_TEXTS[consent];
+  const t = consentText(consent);
   return (
     <div className="stack small">
       <p>{t.summary}</p>
@@ -51,7 +51,7 @@ export function ConsentDialog({
   onDecide: (granted: boolean) => void | Promise<void>;
   busy?: boolean;
 }) {
-  const t = CONSENT_TEXTS[consent];
+  const t = consentText(consent);
   return (
     <Dialog
       open={open}
